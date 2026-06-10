@@ -4,6 +4,10 @@ privado/
 .env
 *.key
 
+# Python
+__pycache__/
+*.pyc
+
 # Lixo de SO / editor
 Thumbs.db
 desktop.ini
