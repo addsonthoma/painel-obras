@@ -125,7 +125,9 @@ async function iniciar(){
   const { data:{ session } } = await sb.auth.getSession();
   if(session) await aposLogin(session.user); else $('#tela-login').classList.remove('hidden');
 
-  sb.auth.onAuthStateChange((_e, sess)=>{ if(!sess){ location.reload(); } });
+  // Só reage ao logout EXPLÍCITO. Não reagir ao evento inicial "sem sessão",
+  // senão a tela de login entra em loop de reload (F5 sem parar).
+  sb.auth.onAuthStateChange((evento)=>{ if(evento === 'SIGNED_OUT'){ location.reload(); } });
 }
 
 async function aposLogin(user){
