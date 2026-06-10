@@ -1,0 +1,185 @@
+/* ===== Painel de Obras — Rodrigues Preventivos ===== */
+:root{
+  --marca:#E84A56;          /* vermelho-coral Rodrigues */
+  --marca-escuro:#CF3B46;
+  --tinta:#1f2430;
+  --tinta-suave:#5b6472;
+  --linha:#e7e9ee;
+  --fundo:#f4f6fa;
+  --card:#ffffff;
+  --ok:#1f9d57;  --ok-bg:#e6f6ec;
+  --aviso:#d98a00;  --aviso-bg:#fef3da;
+  --perigo:#d23b3b; --perigo-bg:#fde7e7;
+  --info:#2f6df0; --info-bg:#e8f0fe;
+  --sombra:0 1px 3px rgba(20,24,40,.08), 0 6px 18px rgba(20,24,40,.06);
+  --raio:14px;
+  font-size:16px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:var(--fundo); color:var(--tinta);
+}
+.hidden{display:none !important}
+small{color:var(--tinta-suave); font-weight:400}
+code{background:#eef1f6; padding:1px 6px; border-radius:6px; font-size:.85em}
+
+/* ---- botões ---- */
+.btn{border:0; border-radius:10px; padding:9px 16px; font-size:.95rem; font-weight:600;
+  cursor:pointer; display:inline-flex; align-items:center; gap:6px; line-height:1;}
+.btn-primary{background:var(--marca); color:#fff}
+.btn-primary:hover{background:var(--marca-escuro)}
+.btn-ghost{background:transparent; color:var(--tinta-suave); border:1px solid var(--linha)}
+.btn-ghost:hover{background:#fff}
+.btn-ok{background:var(--ok); color:#fff}
+.btn-aviso{background:var(--aviso); color:#fff}
+.btn-sec{background:#eef1f6; color:var(--tinta)}
+.btn-sec:hover{background:#e2e6ee}
+.btn-sm{padding:6px 11px; font-size:.85rem; border-radius:8px}
+.btn:disabled{opacity:.5; cursor:not-allowed}
+
+/* ---- login ---- */
+.login-wrap{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px}
+.login-card{background:var(--card); border-radius:18px; box-shadow:var(--sombra);
+  padding:34px 30px; width:min(380px,100%); display:flex; flex-direction:column; gap:12px; text-align:center}
+.login-logo{height:64px; object-fit:contain; margin:0 auto 4px}
+.login-card h1{margin:0; font-size:1.4rem}
+.login-sub{margin:0 0 8px; color:var(--tinta-suave); font-size:.9rem}
+.login-card label{text-align:left; font-size:.85rem; font-weight:600; color:var(--tinta-suave);
+  display:flex; flex-direction:column; gap:5px}
+.login-card input{padding:11px 12px; border:1px solid var(--linha); border-radius:10px; font-size:1rem}
+.login-card input:focus{outline:2px solid var(--marca); border-color:transparent}
+.erro{color:var(--perigo); font-size:.88rem; min-height:1em}
+
+/* ---- topbar ---- */
+.topbar{display:flex; align-items:center; gap:16px; background:#fff; border-bottom:3px solid var(--marca);
+  padding:0 20px; height:60px; position:sticky; top:0; z-index:20}
+.topbar-logo{height:34px}
+.topbar-title{font-size:1.05rem; white-space:nowrap}
+.abas{display:flex; gap:4px; margin-left:10px; flex:1; overflow:auto}
+.aba{background:transparent; border:0; padding:10px 14px; border-radius:9px; font-size:.95rem;
+  font-weight:600; color:var(--tinta-suave); cursor:pointer; white-space:nowrap}
+.aba:hover{background:#f3f5f9}
+.aba.ativa{background:var(--marca); color:#fff}
+.badge-num{background:rgba(0,0,0,.18); color:#fff; border-radius:20px; padding:1px 7px; font-size:.75rem; margin-left:3px}
+.aba:not(.ativa) .badge-num{background:var(--perigo); color:#fff}
+.topbar-user{display:flex; align-items:center; gap:10px; white-space:nowrap}
+#user-nome{font-weight:600; font-size:.9rem}
+.papel-badge{font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; background:#eef1f6;
+  color:var(--tinta-suave); padding:2px 8px; border-radius:20px; font-weight:700}
+.papel-badge.admin{background:var(--marca); color:#fff}
+
+/* ---- conteúdo ---- */
+.conteudo{max-width:1180px; margin:0 auto; padding:22px 20px 60px}
+.view-titulo{margin:0 0 14px; font-size:1.2rem}
+.barra-acoes{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px}
+.barra-dir{margin-left:auto; display:flex; gap:10px; align-items:center}
+#busca-obras{padding:9px 12px; border:1px solid var(--linha); border-radius:10px; min-width:220px; font-size:.92rem}
+.filtros{display:flex; gap:6px; flex-wrap:wrap}
+.chip-filtro{background:#fff; border:1px solid var(--linha); color:var(--tinta-suave);
+  padding:6px 12px; border-radius:20px; font-size:.85rem; font-weight:600; cursor:pointer}
+.chip-filtro.ativo{background:var(--tinta); color:#fff; border-color:var(--tinta)}
+.vazio{text-align:center; color:var(--tinta-suave); padding:50px 0; font-size:1rem}
+
+/* ---- lista de obras ---- */
+.lista-obras{display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:16px}
+.card-obra{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra);
+  padding:16px; display:flex; flex-direction:column; gap:10px; border-left:5px solid var(--linha); cursor:pointer;
+  transition:transform .08s}
+.card-obra:hover{transform:translateY(-2px)}
+.card-obra.urg-vermelho{border-left-color:var(--perigo)}
+.card-obra.urg-ambar{border-left-color:var(--aviso)}
+.card-obra.urg-verde{border-left-color:var(--ok)}
+.card-obra.urg-cinza{border-left-color:#aeb6c4}
+.card-topo{display:flex; justify-content:space-between; align-items:flex-start; gap:8px}
+.card-cliente{font-weight:700; font-size:1.05rem; line-height:1.2}
+.card-end{color:var(--tinta-suave); font-size:.85rem}
+.card-or{color:var(--tinta-suave); font-size:.78rem; font-weight:600}
+.servicos-chips{display:flex; gap:5px; flex-wrap:wrap}
+.chip-serv{font-size:.72rem; font-weight:700; padding:3px 9px; border-radius:20px; background:#eef1f6; color:#3a4150}
+.chip-serv.SHP{background:#e8f0fe; color:#1b56c4}
+.chip-serv.SPDA{background:#fdecf3; color:#b3206b}
+.chip-serv.SDAI{background:#fde7e7; color:#c02d2d}
+.chip-serv.VITAIS{background:#e7f7ee; color:#1c8049}
+.chip-serv.GLP,.chip-serv.AR_COMPRIMIDO{background:#fff0db; color:#a96b00}
+.chip-serv.MANUT_SHP,.chip-serv.MANUT_SKID,.chip-serv.MANUT_ALARME{background:#ece8fb; color:#5b3bbd}
+.card-prazo{display:flex; align-items:center; gap:8px; font-size:.9rem; font-weight:700}
+.card-prazo .dias{padding:2px 9px; border-radius:20px}
+.dias.urg-vermelho{background:var(--perigo-bg); color:var(--perigo)}
+.dias.urg-ambar{background:var(--aviso-bg); color:var(--aviso)}
+.dias.urg-verde{background:var(--ok-bg); color:var(--ok)}
+.dias.urg-cinza{background:#eef1f6; color:var(--tinta-suave)}
+.card-equipe{font-size:.85rem; color:var(--tinta-suave)}
+.card-equipe b{color:var(--tinta)}
+.card-rodape{display:flex; gap:8px; margin-top:4px; flex-wrap:wrap}
+.status-badge{font-size:.74rem; font-weight:800; padding:3px 10px; border-radius:20px}
+.st-em_andamento{background:var(--info-bg); color:var(--info)}
+.st-pendente_material{background:var(--aviso-bg); color:var(--aviso)}
+.st-pendente_execucao{background:#f3eafe; color:#7a3bd0}
+.st-concluida{background:var(--ok-bg); color:var(--ok)}
+.cob-badge{font-size:.74rem; font-weight:800; padding:3px 10px; border-radius:20px; background:#eef1f6; color:var(--tinta-suave)}
+.cob-a_cobrar{background:var(--aviso-bg); color:var(--aviso)}
+.cob-cobranca_enviada{background:var(--info-bg); color:var(--info)}
+.cob-pago{background:var(--ok-bg); color:var(--ok)}
+
+/* ---- modal ---- */
+.modal-fundo{position:fixed; inset:0; background:rgba(15,18,28,.5); display:flex; align-items:flex-start;
+  justify-content:center; padding:30px 16px; z-index:50; overflow:auto}
+.modal{background:#fff; border-radius:16px; width:min(720px,100%); box-shadow:var(--sombra); position:relative; padding:24px}
+.modal-x{position:absolute; top:12px; right:14px; border:0; background:transparent; font-size:1.7rem;
+  line-height:1; color:var(--tinta-suave); cursor:pointer}
+.modal h2{margin:0 4px 4px 0; font-size:1.3rem; padding-right:30px}
+.det-sub{color:var(--tinta-suave); font-size:.9rem; margin-bottom:14px}
+.det-sec{border-top:1px solid var(--linha); padding:14px 0; }
+.det-sec h3{margin:0 0 8px; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; color:var(--tinta-suave)}
+.det-linha{display:flex; gap:8px; margin:3px 0; font-size:.94rem}
+.det-linha .lbl{color:var(--tinta-suave); min-width:90px}
+.tabela{width:100%; border-collapse:collapse; font-size:.9rem}
+.tabela th,.tabela td{text-align:left; padding:6px 8px; border-bottom:1px solid var(--linha)}
+.tabela th{color:var(--tinta-suave); font-size:.78rem; text-transform:uppercase}
+.acoes-status{display:flex; gap:8px; flex-wrap:wrap; margin-top:6px}
+.nota{background:var(--aviso-bg); border-radius:10px; padding:10px 12px; font-size:.88rem; color:#7a5500; margin-top:8px}
+.nota.skid{background:#e8f0fe; color:#1b3f87}
+.log-item{font-size:.82rem; color:var(--tinta-suave); padding:3px 0}
+.log-item b{color:var(--tinta)}
+
+/* ---- formulário ---- */
+.form-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+.form-grid .full{grid-column:1/-1}
+.campo{display:flex; flex-direction:column; gap:4px; font-size:.82rem; font-weight:600; color:var(--tinta-suave)}
+.campo input,.campo textarea,.campo select{padding:9px 11px; border:1px solid var(--linha); border-radius:9px;
+  font-size:.95rem; font-family:inherit; font-weight:400; color:var(--tinta)}
+.campo input:focus,.campo textarea:focus,.campo select:focus{outline:2px solid var(--marca); border-color:transparent}
+.serv-row,.item-row{display:flex; gap:8px; align-items:center; margin-bottom:6px}
+.serv-row select{flex:2} .serv-row input{flex:1; min-width:0}
+.item-row input.prod{flex:3} .item-row input.qtd{flex:1; min-width:0} .item-row input.uni{flex:1; min-width:0}
+.mini-add{font-size:.85rem; color:var(--marca); background:none; border:0; cursor:pointer; font-weight:700; padding:4px 0}
+.x-row{border:0; background:#f3f5f9; border-radius:8px; width:30px; height:30px; cursor:pointer; color:var(--tinta-suave)}
+.equipe-pick{display:flex; flex-wrap:wrap; gap:7px}
+.pessoa-chip{border:1px solid var(--linha); border-radius:20px; padding:6px 12px; font-size:.85rem; cursor:pointer; background:#fff; font-weight:600}
+.pessoa-chip.sel{background:var(--marca); color:#fff; border-color:var(--marca)}
+.pessoa-chip.coringa{border-style:dashed}
+.form-acoes{display:flex; justify-content:flex-end; gap:10px; margin-top:18px; border-top:1px solid var(--linha); padding-top:16px}
+
+/* ---- equipe ---- */
+.lista-equipe{display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px}
+.card-membro{background:#fff; border-radius:12px; box-shadow:var(--sombra); padding:14px}
+.card-membro .nome{font-weight:700}
+.card-membro .funcao{color:var(--tinta-suave); font-size:.85rem; margin-bottom:6px}
+.tag{display:inline-block; font-size:.7rem; font-weight:700; background:#eef1f6; color:#3a4150; padding:2px 8px; border-radius:6px; margin:2px 2px 0 0}
+.tag.parc{background:#e8f0fe; color:#1b56c4} .tag.cor{background:#fff0db; color:#a96b00}
+.inativo{opacity:.5}
+
+/* ---- toast ---- */
+.toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--tinta);
+  color:#fff; padding:12px 20px; border-radius:10px; font-size:.92rem; z-index:99; box-shadow:var(--sombra)}
+.toast.erro-toast{background:var(--perigo)}
+
+/* ---- responsivo / TV ---- */
+@media (max-width:640px){
+  .topbar{flex-wrap:wrap; height:auto; padding:8px 12px; gap:8px}
+  .form-grid{grid-template-columns:1fr}
+  .conteudo{padding:14px}
+}
+@media print{ .topbar,.barra-acoes,.abas{display:none} }

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel de Obras — Rodrigues Preventivos</title>
+  <link rel="icon" href="assets/logo.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ================= LOGIN ================= -->
+  <div id="tela-login" class="login-wrap hidden">
+    <form id="form-login" class="login-card">
+      <img src="assets/logo.png" alt="Rodrigues Preventivos" class="login-logo" />
+      <h1>Painel de Obras</h1>
+      <p class="login-sub">Acesso restrito — Rodrigues Preventivos</p>
+      <label>E-mail
+        <input type="email" id="login-email" autocomplete="username" required />
+      </label>
+      <label>Senha
+        <input type="password" id="login-senha" autocomplete="current-password" required />
+      </label>
+      <button type="submit" class="btn btn-primary" id="btn-entrar">Entrar</button>
+      <div id="login-erro" class="erro"></div>
+    </form>
+  </div>
+
+  <!-- ================= CONFIG FALTANDO ================= -->
+  <div id="tela-config" class="login-wrap hidden">
+    <div class="login-card">
+      <img src="assets/logo.png" alt="Rodrigues Preventivos" class="login-logo" />
+      <h1>Falta configurar</h1>
+      <p class="login-sub">Preencha <code>docs/config.js</code> com a URL e a chave do
+        Supabase (ver <code>SETUP.md</code>) e recarregue a página.</p>
+    </div>
+  </div>
+
+  <!-- ================= APP ================= -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <img src="assets/logo.png" alt="" class="topbar-logo" />
+      <strong class="topbar-title">Painel de Obras</strong>
+      <nav class="abas" id="abas">
+        <button class="aba ativa" data-aba="obras">Obras</button>
+        <button class="aba" data-aba="pendencias">Pendências <span class="badge-num" id="num-pend"></span></button>
+        <button class="aba so-admin" data-aba="cobrancas">Cobranças <span class="badge-num" id="num-cob"></span></button>
+        <button class="aba so-admin" data-aba="equipe">Equipe</button>
+      </nav>
+      <div class="topbar-user">
+        <span id="user-nome"></span>
+        <span class="papel-badge" id="user-papel"></span>
+        <button class="btn btn-ghost" id="btn-sair">Sair</button>
+      </div>
+    </header>
+
+    <main class="conteudo">
+      <!-- ABA OBRAS -->
+      <section id="view-obras" class="view">
+        <div class="barra-acoes">
+          <div class="filtros" id="filtros-status"></div>
+          <div class="barra-dir">
+            <input type="search" id="busca-obras" placeholder="Buscar cliente / endereço…" />
+            <button class="btn btn-primary so-admin" id="btn-nova-obra">+ Nova obra</button>
+          </div>
+        </div>
+        <div id="lista-obras" class="lista-obras"></div>
+        <div id="obras-vazio" class="vazio hidden">Nenhuma obra por aqui ainda.</div>
+      </section>
+
+      <!-- ABA PENDÊNCIAS -->
+      <section id="view-pendencias" class="view hidden">
+        <h2 class="view-titulo">Pendências de material <small>(para o Addson / compras)</small></h2>
+        <div id="lista-pendencias" class="lista-obras"></div>
+        <div id="pend-vazio" class="vazio hidden">Sem pendências de material. 👍</div>
+      </section>
+
+      <!-- ABA COBRANÇAS -->
+      <section id="view-cobrancas" class="view hidden">
+        <h2 class="view-titulo">Cobranças <small>(obras concluídas — financeiro)</small></h2>
+        <div class="filtros" id="filtros-cobranca"></div>
+        <div id="lista-cobrancas" class="lista-obras"></div>
+        <div id="cob-vazio" class="vazio hidden">Nada para cobrar no momento.</div>
+      </section>
+
+      <!-- ABA EQUIPE -->
+      <section id="view-equipe" class="view hidden">
+        <div class="barra-acoes">
+          <h2 class="view-titulo">Equipe</h2>
+          <button class="btn btn-primary" id="btn-novo-membro">+ Adicionar</button>
+        </div>
+        <div id="lista-equipe" class="lista-equipe"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ================= MODAL GENÉRICO ================= -->
+  <div id="modal-fundo" class="modal-fundo hidden">
+    <div class="modal" id="modal-caixa">
+      <button class="modal-x" id="modal-fechar" aria-label="Fechar">×</button>
+      <div id="modal-conteudo"></div>
+    </div>
+  </div>
+
+  <!-- toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Supabase JS (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
