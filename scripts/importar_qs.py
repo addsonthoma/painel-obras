@@ -1,47 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Importa um orçamento do Quanto Sobra para o Painel de Obras (Supabase).
+Importa orçamento(s) do Quanto Sobra para o Painel de Obras (Supabase).
 
-Fluxo de uso:
-  1. O Claude (ou você) raspa o orçamento do Quanto Sobra e gera um JSON
-     com o formato abaixo.
-  2. Roda:  python importar_qs.py orcamento.json
-  3. A obra + serviços + materiais + valor caem no painel.
+Use junto com scripts/puxar_qs.js (que puxa os dados do QS pela API interna):
+    1) rode o puxar_qs.js na aba logada do QS -> copie o array JSON pra um arquivo
+    2) python importar_qs.py arquivo.json
 
-Formato do JSON de entrada (campos extras são ignorados):
-{
-  "cliente": "Master Shopping",
-  "endereco": "Rua X, 100 - Centro",
-  "telefone_cliente": "47 99999-0000",
-  "orcamento_qs": "OR901",
-  "valor_total": 32000.00,
-  "data_inicio": "2026-06-10",
-  "data_prazo":  "2026-06-20",
-  "tem_skid": true,
-  "servicos": [ {"servico": "SHP", "dias": 3, "pessoas": 3},
-                {"servico": "SDAI", "dias": 2, "pessoas": 2} ],
-  "itens":    [ {"produto": "Tubo aço galv 2.1/2\"", "quantidade": 30, "unidade": "m"},
-                {"produto": "Hidrante completo", "quantidade": 4, "unidade": "un"} ]
-}
+O JSON pode ser UM orçamento (objeto) ou VÁRIOS (lista). Campos:
+    orcamento_qs, cliente, valor_total, telefone_cliente, obs (opcionais p/ os 3),
+    itens: [ {produto, quantidade, unidade?} ],
+    servicos: [ "SHP"|"SPDA"|"VITAIS"|"SDAI"|"GLP"|"MANUT_ALARME"|... ]  (opcional:
+              se não vier, é detectado pelos nomes dos itens + observação)
+    tem_skid (opcional: se não vier, detecta item "skid")
 
-Se "servicos" vier vazio, o script tenta adivinhar pelos nomes dos itens.
+Pula automaticamente quem já existe no painel (mesmo orcamento_qs).
+Itens tipo serviço (mão de obra/ART) NÃO devem vir aqui — o puxar_qs.js já filtra.
 Lê SUPABASE_URL e SUPABASE_SERVICE_KEY de ../privado/.env
 """
-import json, os, sys, urllib.request, urllib.error
+import json, sys, urllib.request, urllib.error
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent.parent
-ENV  = RAIZ / "privado" / ".env"
-
-# pistas simples p/ adivinhar o serviço pelo nome do material (igual lógica da proposta)
-PISTAS = {
-    "SPDA":   ["cobre nu", "haste", "captor", "franklin", "mastro", "aterr", "para-raio", "para raio"],
-    "SHP":    ["hidrante", "mangueira", "mangotinho", "abrigo", "esguicho", "bomba", "tubo aço", "registro globo"],
-    "SDAI":   ["central de alarme", "detector", "acionador", "sirene", "avisador", "fumaça"],
-    "VITAIS": ["extintor", "placa de saída", "bloco autônomo", "iluminação de emerg", "sinaliza"],
-    "GLP":    ["regulador", "abrigo de gás", "tubo cobre", "válvula gás", "glp"],
-}
+ENV = Path(__file__).resolve().parent.parent / "privado" / ".env"
 
 def carregar_env():
     cfg = {}
@@ -49,78 +29,98 @@ def carregar_env():
         for ln in ENV.read_text(encoding="utf-8").splitlines():
             ln = ln.strip()
             if ln and not ln.startswith("#") and "=" in ln:
-                k, v = ln.split("=", 1)
-                cfg[k.strip()] = v.strip().strip('"')
-    url = cfg.get("SUPABASE_URL")  or os.environ.get("SUPABASE_URL")
-    key = cfg.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY")
+                k, v = ln.split("=", 1); cfg[k.strip()] = v.strip().strip('"')
+    url, key = cfg.get("SUPABASE_URL"), cfg.get("SUPABASE_SERVICE_KEY")
     if not url or "COLE_AQUI" in url or not key or "COLE_AQUI" in key:
         sys.exit("ERRO: preencha SUPABASE_URL e SUPABASE_SERVICE_KEY em privado/.env")
     return url.rstrip("/"), key
 
-def req(url, key, metodo, caminho, corpo=None, prefer=None):
+URL, KEY = carregar_env()
+def req(metodo, caminho, corpo=None, prefer=None):
     data = json.dumps(corpo).encode("utf-8") if corpo is not None else None
-    r = urllib.request.Request(url + "/rest/v1/" + caminho, data=data, method=metodo)
-    r.add_header("apikey", key)
-    r.add_header("Authorization", "Bearer " + key)
+    r = urllib.request.Request(URL + "/rest/v1/" + caminho, data=data, method=metodo)
+    r.add_header("apikey", KEY); r.add_header("Authorization", "Bearer " + KEY)
     r.add_header("Content-Type", "application/json")
-    if prefer:
-        r.add_header("Prefer", prefer)
+    if prefer: r.add_header("Prefer", prefer)
     try:
         with urllib.request.urlopen(r) as resp:
-            t = resp.read().decode("utf-8")
-            return json.loads(t) if t else None
+            t = resp.read().decode("utf-8"); return json.loads(t) if t else None
     except urllib.error.HTTPError as e:
-        sys.exit(f"ERRO {e.code} em {metodo} {caminho}: {e.read().decode('utf-8')}")
+        sys.exit("ERRO %s em %s %s: %s" % (e.code, metodo, caminho, e.read().decode("utf-8")))
 
-def adivinhar_servicos(itens):
-    achados = []
-    for serv, pistas in PISTAS.items():
-        for it in itens:
-            nome = (it.get("produto") or "").lower()
-            if any(p in nome for p in pistas):
-                achados.append({"servico": serv, "dias": None, "pessoas": None})
-                break
+# ---- detecção do tipo de serviço pelos nomes dos itens + observação ----
+PISTAS = {
+    "SHP":    ["hidrante", "mangueira", "mangotinho", "ranhurado", "tubo aço", "tubo aco",
+               "tubo carbono", "tubo galv", "registro", "esguicho", "storz", "niple", "flange",
+               "valvula gaveta", "válvula gaveta", "skid", "abrigo de mangueira", "tubulaç", "tubulac",
+               "valvula retenção", "valvula retencao", "joelho galv", "cotovelo galv"],
+    "SDAI":   ["central alarme", "central de alarme", "detector", "acionador", "sirene",
+               "audio visual", "áudio visual", "endereç", "enderec", "cabo blindado",
+               "fonte auxiliar", "módulo de endere", "modulo de endere", "avisador"],
+    "VITAIS": ["bloco nano", "bloco 3000", "bloco autôn", "bloco auton", "iluminação de emerg",
+               "iluminacao de emerg", "placa de saída", "placa de saida", "placa extintor",
+               "suporte de parede para extintor", "extintor", "demarcação de piso", "placa letra"],
+    "SPDA":   ["cobre nu", "haste de aterr", "captor", "franklin", "mastro", "para-raio", "para raio"],
+    "GLP":    ["regulador", "abrigo de gás", "abrigo de gas", "tubo cobre", "válvula gás", "valvula gas"],
+}
+def detectar_servicos(o):
+    if o.get("servicos"):
+        return list(o["servicos"])
+    txt = " ".join((it.get("produto") or "").lower() for it in o.get("itens", []))
+    obs = (o.get("obs") or "").lower()
+    full = txt + " " + obs
+    achados = [serv for serv, ks in PISTAS.items() if any(k in full for k in ks)]
+    if not achados:
+        achados = ["SHP"]  # fallback seguro (manutenção genérica)
+    # manutenção exclusiva de alarme -> MANUT_ALARME
+    manut = any(k in obs for k in ["manuten", "reparo", "troca de central", "substituiç",
+                                   "substituic", "elevaç", "elevac", "alteração de tubul", "alteracao de tubul"])
+    if manut and achados == ["SDAI"]:
+        achados = ["MANUT_ALARME"]
     return achados
+
+def detectar_skid(o):
+    if "tem_skid" in o:
+        return bool(o["tem_skid"])
+    return any("skid" in (it.get("produto") or "").lower() for it in o.get("itens", []))
+
+def existe(orc):
+    r = req("GET", "obras?orcamento_qs=eq.%s&select=id" % orc)
+    return r[0]["id"] if r else None
+
+def importar(o):
+    orc = o.get("orcamento_qs")
+    if o.get("erro"):
+        print("IGNORADO %s: %s" % (orc, o["erro"])); return
+    if not o.get("cliente"):
+        print("IGNORADO %s: sem cliente" % orc); return
+    if orc and existe(orc):
+        print("PULADO (já existe): %s" % orc); return
+    servicos = detectar_servicos(o)
+    nova = req("POST", "obras", [{"cliente": o["cliente"], "orcamento_qs": orc,
+        "telefone_cliente": o.get("telefone_cliente"), "tem_skid": detectar_skid(o)}],
+        "return=representation")[0]
+    oid = nova["id"]
+    req("POST", "obra_servicos", [{"obra_id": oid, "servico": s} for s in servicos])
+    itens = o.get("itens", [])
+    if itens:
+        req("POST", "obra_itens", [{"obra_id": oid, "produto": it["produto"],
+            "quantidade": it.get("quantidade", 1), "unidade": it.get("unidade"), "ordem": i}
+            for i, it in enumerate(itens)])
+    req("POST", "obra_financeiro", [{"obra_id": oid, "valor_total": o.get("valor_total"),
+        "status_cobranca": "nao_aplicavel"}], "resolution=merge-duplicates")
+    print("OK  %-6s  %-42s  %-14s  %d materiais%s" % (
+        orc, (o["cliente"] or "")[:42], "+".join(servicos), len(itens),
+        "  [SKID]" if detectar_skid(o) else ""))
 
 def main():
     if len(sys.argv) < 2:
-        sys.exit("Uso: python importar_qs.py caminho/orcamento.json")
+        sys.exit("Uso: python importar_qs.py arquivo.json")
     dados = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    if not dados.get("cliente"):
-        sys.exit("ERRO: o JSON precisa ter ao menos 'cliente'.")
-    url, key = carregar_env()
-
-    obra = {
-        "cliente": dados["cliente"],
-        "endereco": dados.get("endereco"),
-        "telefone_cliente": dados.get("telefone_cliente"),
-        "orcamento_qs": dados.get("orcamento_qs"),
-        "data_inicio": dados.get("data_inicio"),
-        "data_prazo": dados.get("data_prazo"),
-        "tem_skid": bool(dados.get("tem_skid", False)),
-    }
-    nova = req(url, key, "POST", "obras", [obra], "return=representation")[0]
-    oid = nova["id"]
-
-    itens = dados.get("itens") or []
-    servicos = dados.get("servicos") or adivinhar_servicos(itens)
-    if servicos:
-        req(url, key, "POST", "obra_servicos", [{**s, "obra_id": oid} for s in servicos])
-    if itens:
-        linhas = [{"obra_id": oid, "produto": it["produto"], "quantidade": it.get("quantidade", 1),
-                   "unidade": it.get("unidade"), "servico": it.get("servico"), "ordem": i}
-                  for i, it in enumerate(itens)]
-        req(url, key, "POST", "obra_itens", linhas)
-
-    req(url, key, "POST", "obra_financeiro",
-        [{"obra_id": oid, "valor_total": dados.get("valor_total"), "status_cobranca": "nao_aplicavel"}],
-        "resolution=merge-duplicates")
-
-    print(f"OK - obra '{obra['cliente']}' importada.")
-    print(f"   id: {oid}")
-    print(f"   serviços: {[s['servico'] for s in servicos] or 'nenhum'}")
-    print(f"   materiais: {len(itens)}")
-    print("   Abra o painel para conferir, definir prazo/equipe e ajustar o que precisar.")
+    lista = dados if isinstance(dados, list) else [dados]
+    for o in lista:
+        importar(o)
+    print("FIM — %d processado(s)" % len(lista))
 
 if __name__ == "__main__":
     main()
