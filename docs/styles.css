@@ -143,6 +143,12 @@ code{background:#eef1f6; padding:1px 6px; border-radius:6px; font-size:.85em}
 .nota.skid{background:#e8f0fe; color:#1b3f87}
 .log-item{font-size:.82rem; color:var(--tinta-suave); padding:3px 0}
 .log-item b{color:var(--tinta)}
+.obs-box{white-space:pre-wrap; font-size:.93rem; color:var(--tinta); background:#f8f9fc; border:1px solid var(--linha); border-radius:9px; padding:9px 11px; min-height:20px}
+.anexo-item{display:flex; align-items:center; gap:8px; padding:4px 0; font-size:.92rem}
+.anexo-item a{color:var(--marca); text-decoration:none; font-weight:600}
+.anexo-item a:hover{text-decoration:underline}
+.anexo-item small{color:var(--tinta-suave)}
+.anexo-item .x-row{width:26px; height:26px; margin-left:auto}
 
 /* ---- formulário ---- */
 .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px}

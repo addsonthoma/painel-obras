@@ -98,7 +98,8 @@ def importar(o):
         print("PULADO (já existe): %s" % orc); return
     servicos = detectar_servicos(o)
     nova = req("POST", "obras", [{"cliente": o["cliente"], "orcamento_qs": orc,
-        "telefone_cliente": o.get("telefone_cliente"), "tem_skid": detectar_skid(o)}],
+        "telefone_cliente": o.get("telefone_cliente"), "tem_skid": detectar_skid(o),
+        "observacoes": o.get("obs")}],
         "return=representation")[0]
     oid = nova["id"]
     req("POST", "obra_servicos", [{"obra_id": oid, "servico": s} for s in servicos])

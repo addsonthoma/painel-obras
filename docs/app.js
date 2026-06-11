@@ -364,6 +364,16 @@ function abrirObra(id){
     ${o.projeto_pdf_path?`<button class="btn btn-sec btn-sm" id="js-ver-pdf">📄 Ver projeto (PDF)</button>`:'<span class="card-end">Nenhum projeto anexado.</span>'}
     ${state.isAdmin?`<button class="btn btn-sec btn-sm" id="js-up-pdf">⬆ ${o.projeto_pdf_path?'Trocar':'Anexar'} PDF</button><input type="file" id="js-pdf-input" accept="application/pdf" class="hidden">`:''}</div>`;
 
+  // observações
+  html+=`<div class="det-sec"><h3>Observações</h3>
+    <div class="obs-box">${o.observacoes?esc(o.observacoes):'<span class="card-end">Sem observações.</span>'}</div>
+    ${state.isAdmin?`<button class="btn btn-sec btn-sm" id="js-edit-obs" style="margin-top:8px">✏️ Editar observações</button>`:''}</div>`;
+
+  // anexos
+  html+=`<div class="det-sec"><h3>Anexos</h3>
+    <div id="js-anexos">carregando…</div>
+    ${state.isAdmin?`<button class="btn btn-sec btn-sm" id="js-up-anexo" style="margin-top:8px">📎 Anexar arquivo</button><input type="file" id="js-anexo-input" class="hidden">`:''}</div>`;
+
   // status (admin)
   if(state.isAdmin){
     html+=`<div class="det-sec"><h3>Situação</h3><div class="acoes-status">
@@ -395,6 +405,10 @@ function abrirObra(id){
   // handlers
   $('#js-print-mat').onclick=()=>imprimirMateriais(o.id);
   $('#js-ver-pdf') && ($('#js-ver-pdf').onclick=()=>verPDF(o));
+  $('#js-edit-obs') && ($('#js-edit-obs').onclick=()=>editarObs(o));
+  $('#js-up-anexo') && ($('#js-up-anexo').onclick=()=>$('#js-anexo-input').click());
+  $('#js-anexo-input') && ($('#js-anexo-input').onchange=e=>uploadAnexo(o, e.target.files[0]));
+  carregarAnexos(o.id);
   if(state.isAdmin){
     $('#js-aplicar-sug').onclick=async()=>{ await salvarCampos(o.id,{equipe_confirmada:sug.equipe}); logar(o.id,'equipe','Aplicou equipe sugerida'); abrirObra(o.id); toast('Equipe aplicada.'); };
     $('#js-editar-equipe').onclick=()=>editarEquipeObra(o);
@@ -494,6 +508,48 @@ async function verPDF(o){
   if(error){ toast(error.message,true); return; } window.open(data.signedUrl,'_blank');
 }
 
+/* ---------- observações ---------- */
+function editarObs(o){
+  abrirModal(`<h2>Observações — ${esc(o.cliente)}</h2>
+    <textarea id="obs-area" class="campo" style="width:100%;min-height:150px;font-family:inherit" placeholder="Ex.: precisa de empilhadeira; cliente pediu pra avisar antes; etc.">${esc(o.observacoes||'')}</textarea>
+    <div class="form-acoes"><button class="btn btn-ghost" id="obs-volta">Voltar</button><button class="btn btn-primary" id="obs-salva">Salvar</button></div>`);
+  $('#obs-volta').onclick=()=>abrirObra(o.id);
+  $('#obs-salva').onclick=async()=>{ if(await salvarCampos(o.id,{observacoes:$('#obs-area').value.trim()||null})){ await logar(o.id,'observações','Editou observações'); abrirObra(o.id); toast('Observações salvas.'); } };
+}
+
+/* ---------- anexos (qualquer arquivo, vários por obra) ---------- */
+async function carregarAnexos(id){
+  const el=$('#js-anexos'); if(!el) return;
+  const { data, error }=await sb.from('obra_anexos').select('*').eq('obra_id',id).order('criado_em');
+  if(error){ el.innerHTML='<span class="card-end">Anexos indisponíveis — rode a migração SQL (migracao_anexos_obs.sql).</span>'; return; }
+  if(!data||!data.length){ el.innerHTML='<span class="card-end">Nenhum anexo.</span>'; return; }
+  el.innerHTML=data.map(a=>`<div class="anexo-item"><a href="#" class="js-ver-anexo" data-p="${esc(a.path)}">📄 ${esc(a.nome)}</a>
+    <small>${a.criado_por_nome?esc(a.criado_por_nome):''}</small>
+    ${state.isAdmin?`<button class="x-row js-del-anexo" data-id="${a.id}" data-p="${esc(a.path)}" title="Excluir">×</button>`:''}</div>`).join('');
+  el.querySelectorAll('.js-ver-anexo').forEach(x=>x.onclick=ev=>{ev.preventDefault(); verAnexo(x.dataset.p);});
+  el.querySelectorAll('.js-del-anexo').forEach(x=>x.onclick=()=>excluirAnexo(id, x.dataset.id, x.dataset.p));
+}
+async function uploadAnexo(o, file){
+  if(!file) return; toast('Enviando anexo…');
+  const path=`${o.id}/anexos/${Date.now()}_${file.name.replace(/[^\w.\-]/g,'_')}`;
+  const { error }=await sb.storage.from('projetos').upload(path, file);
+  if(error){ toast('Erro no upload: '+error.message, true); return; }
+  const { error:e2 }=await sb.from('obra_anexos').insert({ obra_id:o.id, nome:file.name, path,
+    mime:file.type||null, tamanho:file.size||null, criado_por_nome:state.perfil?.nome||state.user.email });
+  if(e2){ toast('Erro: '+e2.message, true); return; }
+  await logar(o.id,'anexo','Anexou '+file.name); toast('Anexo enviado.'); carregarAnexos(o.id);
+}
+async function verAnexo(path){
+  const { data, error }=await sb.storage.from('projetos').createSignedUrl(path, 3600);
+  if(error){ toast(error.message,true); return; } window.open(data.signedUrl,'_blank');
+}
+async function excluirAnexo(obraId, id, path){
+  if(!confirm('Excluir este anexo?')) return;
+  await sb.storage.from('projetos').remove([path]);
+  await sb.from('obra_anexos').delete().eq('id',id);
+  await logar(obraId,'anexo','Removeu anexo'); carregarAnexos(obraId); toast('Anexo removido.');
+}
+
 /* =====================================================================
    FOLHA DE MATERIAIS (impressão — só quantidades, SEM valores)
    ===================================================================== */
@@ -556,6 +612,7 @@ function formObra(o){
       <label class="campo">Prazo (entrega)<input type="date" name="data_prazo" value="${o?.data_prazo||''}"></label>
       <label class="campo">Valor total (R$)<input type="number" step="0.01" name="valor_total" value="${fin?.valor_total??''}"></label>
       <label class="campo" style="flex-direction:row;align-items:center;gap:8px;font-weight:600"><input type="checkbox" name="tem_skid" ${o?.tem_skid?'checked':''} style="width:auto"> Tem SKID de bombas</label>
+      <label class="campo full">Observações<textarea name="observacoes" rows="2">${esc(o?.observacoes||'')}</textarea></label>
     </div>
 
     <div class="det-sec"><h3>Serviços (dias × pessoas)</h3><div id="serv-list">${servRows}</div>
@@ -610,7 +667,7 @@ async function salvarObra(o){
 
   const dados={ cliente, endereco:f.endereco.value.trim()||null, telefone_cliente:f.telefone_cliente.value.trim()||null,
     orcamento_qs:f.orcamento_qs.value.trim()||null, data_inicio:f.data_inicio.value||null, data_prazo:f.data_prazo.value||null,
-    tem_skid:temSkid, equipe_sugerida:sug.equipe, equipe_confirmada:equipe };
+    tem_skid:temSkid, observacoes:f.observacoes.value.trim()||null, equipe_sugerida:sug.equipe, equipe_confirmada:equipe };
 
   let obraId=o?.id;
   if(o){ const {error}=await sb.from('obras').update(dados).eq('id',o.id); if(error){toast(error.message,true);return;} }
