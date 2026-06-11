@@ -107,7 +107,7 @@ def main():
     if servicos:
         req(url, key, "POST", "obra_servicos", [{**s, "obra_id": oid} for s in servicos])
     if itens:
-        linhas = [{"produto": it["produto"], "quantidade": it.get("quantidade", 1),
+        linhas = [{"obra_id": oid, "produto": it["produto"], "quantidade": it.get("quantidade", 1),
                    "unidade": it.get("unidade"), "servico": it.get("servico"), "ordem": i}
                   for i, it in enumerate(itens)]
         req(url, key, "POST", "obra_itens", linhas)
