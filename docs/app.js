@@ -40,7 +40,7 @@ let sb = null;
 const state = {
   user:null, perfil:null, isAdmin:false,
   obras:[], equipe:[], financeiro:{},
-  aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
+  modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
   modalAberto:false,
 };
 
@@ -140,6 +140,9 @@ async function aposLogin(user){
   const pb = $('#user-papel'); pb.textContent = state.isAdmin?'admin':'operação';
   pb.classList.toggle('admin', state.isAdmin);
   document.querySelectorAll('.so-admin').forEach(el=>el.classList.toggle('hidden', !state.isAdmin));
+  // módulos visíveis por papel (admin vê tudo; operação só Obras)
+  const permitidos = state.isAdmin ? ['obras','leads'] : ['obras'];
+  document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('hidden', !permitidos.includes(b.dataset.mod)));
   await carregarTudo();
   setInterval(()=>{ if(!state.modalAberto) carregarTudo(true); }, 60000);
 }
@@ -170,6 +173,19 @@ async function carregarTudo(silencioso){
   }
   render();
 }
+
+/* =====================================================================
+   MÓDULOS DO PORTAL (Obras, Leads, ...)
+   ===================================================================== */
+const LEADS_URL = 'https://addsonthoma.github.io/rodrigues-painel/qbQv3yHGdx6ocaYE/';
+function trocarModulo(mod){
+  state.modulo = mod;
+  document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('ativa', b.dataset.mod===mod));
+  document.getElementById('mod-obras').classList.toggle('hidden', mod!=='obras');
+  document.getElementById('mod-leads').classList.toggle('hidden', mod!=='leads');
+  if(mod==='leads'){ const fr=document.getElementById('leads-frame'); if(!fr.getAttribute('src')) fr.src=LEADS_URL; }
+}
+$('#modulos').addEventListener('click', e=>{ const b=e.target.closest('.modulo'); if(b) trocarModulo(b.dataset.mod); });
 
 /* =====================================================================
    NAVEGAÇÃO ENTRE ABAS

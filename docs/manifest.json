@@ -1,7 +1,7 @@
 {
-  "name": "Painel de Obras — Rodrigues Preventivos",
-  "short_name": "Painel Obras",
-  "description": "Obras fechadas, equipes, materiais e cobranças da Rodrigues Preventivos",
+  "name": "Portal Rodrigues Preventivos",
+  "short_name": "Portal Rodrigues",
+  "description": "Portal interno da Rodrigues Preventivos: obras, equipes, materiais, cobranças e leads",
   "lang": "pt-BR",
   "start_url": "./",
   "scope": "./",

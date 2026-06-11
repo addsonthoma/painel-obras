@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Painel de Obras — Rodrigues Preventivos</title>
+  <title>Portal Rodrigues Preventivos</title>
   <link rel="icon" href="assets/logo.png" />
   <link rel="stylesheet" href="styles.css" />
   <!-- PWA / instalável no celular -->
@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="Painel Obras" />
+  <meta name="apple-mobile-web-app-title" content="Portal Rodrigues" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 </head>
 <body>
@@ -48,12 +48,10 @@
   <div id="app" class="hidden">
     <header class="topbar">
       <img src="assets/logo.png" alt="" class="topbar-logo" />
-      <strong class="topbar-title">Painel de Obras</strong>
-      <nav class="abas" id="abas">
-        <button class="aba ativa" data-aba="obras">Obras</button>
-        <button class="aba" data-aba="pendencias">Pendências <span class="badge-num" id="num-pend"></span></button>
-        <button class="aba so-admin" data-aba="cobrancas">Cobranças <span class="badge-num" id="num-cob"></span></button>
-        <button class="aba so-admin" data-aba="equipe">Equipe</button>
+      <strong class="topbar-title">Portal Rodrigues</strong>
+      <nav class="modulos" id="modulos">
+        <button class="modulo ativa" data-mod="obras">🏗️ Obras</button>
+        <button class="modulo" data-mod="leads">📍 Leads</button>
       </nav>
       <div class="topbar-user">
         <span id="user-nome"></span>
@@ -62,6 +60,14 @@
       </div>
     </header>
 
+    <!-- ===================== MÓDULO OBRAS ===================== -->
+    <div id="mod-obras" class="modulo-view">
+    <nav class="abas" id="abas">
+      <button class="aba ativa" data-aba="obras">Obras</button>
+      <button class="aba" data-aba="pendencias">Pendências <span class="badge-num" id="num-pend"></span></button>
+      <button class="aba so-admin" data-aba="cobrancas">Cobranças <span class="badge-num" id="num-cob"></span></button>
+      <button class="aba so-admin" data-aba="equipe">Equipe</button>
+    </nav>
     <main class="conteudo">
       <!-- ABA OBRAS -->
       <section id="view-obras" class="view">
@@ -100,7 +106,18 @@
         <div id="lista-equipe" class="lista-equipe"></div>
       </section>
     </main>
-  </div>
+    </div><!-- /mod-obras -->
+
+    <!-- ===================== MÓDULO LEADS ===================== -->
+    <div id="mod-leads" class="modulo-view hidden">
+      <div class="leads-bar">
+        <strong>Painel CBMSC</strong>
+        <span class="leads-sub">— multas, fiscalizações e leads (prospecção)</span>
+        <a href="https://addsonthoma.github.io/rodrigues-painel/qbQv3yHGdx6ocaYE/" target="_blank" rel="noopener" class="btn btn-sec btn-sm leads-fs">Abrir em tela cheia ↗</a>
+      </div>
+      <iframe id="leads-frame" title="Painel de Leads CBMSC" loading="lazy"></iframe>
+    </div>
+  </div><!-- /app -->
 
   <!-- ================= MODAL GENÉRICO ================= -->
   <div id="modal-fundo" class="modal-fundo hidden">
