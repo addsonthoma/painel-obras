@@ -6,6 +6,14 @@
   <title>Painel de Obras — Rodrigues Preventivos</title>
   <link rel="icon" href="assets/logo.png" />
   <link rel="stylesheet" href="styles.css" />
+  <!-- PWA / instalável no celular -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#E84A56" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Painel Obras" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 </head>
 <body>
 
@@ -109,5 +117,10 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
 </body>
 </html>
