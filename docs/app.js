@@ -156,6 +156,27 @@ $('#form-login').addEventListener('submit', async e=>{
   await aposLogin(data.user);
 });
 $('#btn-sair').addEventListener('click', async ()=>{ await sb.auth.signOut(); location.reload(); });
+$('#btn-senha').addEventListener('click', ()=>modalSenha());
+
+function modalSenha(){
+  abrirModal(`<h2>Trocar minha senha</h2>
+    <p class="det-sub">Defina uma nova senha (mínimo 6 caracteres). Vale só para o seu login (${esc(state.perfil?.nome||state.user?.email||'')}).</p>
+    <label class="campo" style="margin-bottom:10px">Nova senha<input type="password" id="sn1" autocomplete="new-password" style="width:100%"></label>
+    <label class="campo">Confirmar nova senha<input type="password" id="sn2" autocomplete="new-password" style="width:100%"></label>
+    <div id="sn-erro" class="erro" style="margin-top:8px"></div>
+    <div class="form-acoes"><button class="btn btn-ghost" id="sn-cancel">Cancelar</button><button class="btn btn-primary" id="sn-salva">Salvar nova senha</button></div>`);
+  $('#sn-cancel').onclick=fecharModal;
+  $('#sn-salva').onclick=async()=>{
+    const a=$('#sn1').value, b=$('#sn2').value, err=$('#sn-erro');
+    if(a.length<6){ err.textContent='A senha precisa de pelo menos 6 caracteres.'; return; }
+    if(a!==b){ err.textContent='As senhas não conferem.'; return; }
+    const btn=$('#sn-salva'); btn.disabled=true; btn.textContent='Salvando…';
+    const { error }=await sb.auth.updateUser({ password:a });
+    btn.disabled=false; btn.textContent='Salvar nova senha';
+    if(error){ err.textContent=error.message; return; }
+    fecharModal(); toast('Senha alterada com sucesso! ✓');
+  };
+}
 
 /* =====================================================================
    CARGA DE DADOS
