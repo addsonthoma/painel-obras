@@ -39,7 +39,7 @@ const COBRANCA = {
 let sb = null;
 const state = {
   user:null, perfil:null, isAdmin:false,
-  obras:[], equipe:[], financeiro:{},
+  obras:[], equipe:[], financeiro:{}, monitor:[],
   modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
   modalAberto:false,
 };
@@ -141,7 +141,7 @@ async function aposLogin(user){
   pb.classList.toggle('admin', state.isAdmin);
   document.querySelectorAll('.so-admin').forEach(el=>el.classList.toggle('hidden', !state.isAdmin));
   // módulos visíveis por papel (admin vê tudo; operação só Obras)
-  const permitidos = state.isAdmin ? ['obras','leads'] : ['obras'];
+  const permitidos = state.isAdmin ? ['obras','leads','monitor'] : ['obras'];
   document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('hidden', !permitidos.includes(b.dataset.mod)));
   await carregarTudo();
   setInterval(()=>{ if(!state.modalAberto) carregarTudo(true); }, 60000);
@@ -204,7 +204,9 @@ function trocarModulo(mod){
   document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('ativa', b.dataset.mod===mod));
   document.getElementById('mod-obras').classList.toggle('hidden', mod!=='obras');
   document.getElementById('mod-leads').classList.toggle('hidden', mod!=='leads');
+  document.getElementById('mod-monitor').classList.toggle('hidden', mod!=='monitor');
   if(mod==='leads'){ const fr=document.getElementById('leads-frame'); if(!fr.getAttribute('src')) fr.src=LEADS_URL; }
+  if(mod==='monitor') carregarMonitor();
 }
 $('#modulos').addEventListener('click', e=>{ const b=e.target.closest('.modulo'); if(b) trocarModulo(b.dataset.mod); });
 
@@ -749,6 +751,127 @@ function formMembro(m){
       coringa:f.coringa.checked, parceiro:f.parceiro.checked, ativo:f.ativo.checked };
     if(m){ await sb.from('equipe').update(dados).eq('id',m.id); } else { await sb.from('equipe').insert(dados); }
     await carregarTudo(true); fecharModal(); toast('Equipe salva.'); };
+}
+
+/* =====================================================================
+   MÓDULO MONITORAMENTO (edificações de clientes no e-SCI / Bombeiros)
+   ===================================================================== */
+$('#btn-novo-cliente-mon') && $('#btn-novo-cliente-mon').addEventListener('click', ()=>formClienteMon(null));
+
+async function carregarMonitor(){
+  const el=$('#lista-monitor'); if(!el.innerHTML) el.innerHTML='<div class="vazio">Carregando…</div>';
+  const { data, error }=await sb.from('monitor_clientes').select('*, monitor_res(*, monitor_autos(*))').order('nome');
+  if(error){ el.innerHTML=`<div class="vazio">Indisponível — rode a migração <code>migracao_monitoramento.sql</code> no Supabase.<br><small>${esc(error.message)}</small></div>`; $('#monitor-vazio').classList.add('hidden'); return; }
+  state.monitor=data||[]; renderMonitor();
+}
+function _addMeses(s,n){ const d=new Date(s+'T00:00:00'); d.setMonth(d.getMonth()+n); return d; }
+function _addAnos(s,n){ const d=new Date(s+'T00:00:00'); d.setFullYear(d.getFullYear()+n); return d; }
+function _diasDe(d){ const h=new Date(); h.setHours(0,0,0,0); return Math.round((d-h)/86400000); }
+function _iso(d){ return d.toISOString().slice(0,10); }
+function funcStatus(re){
+  if(!re.funcionamento_data) return {txt:'Funcionamento: não informado', cls:'cinza'};
+  const v=_addAnos(re.funcionamento_data,1), dias=_diasDe(v);
+  if(dias<0) return {txt:`⚠ Funcionamento VENCIDO há ${-dias} dias`, cls:'vermelho'};
+  return {txt:`Funcionamento vence em ${dias} dias (${dataBR(_iso(v))})`, cls: dias<=30?'vermelho':dias<=90?'ambar':'verde'};
+}
+function manutStatus(re){
+  if(!re.ultima_manutencao) return {txt:'Manutenção: a agendar', cls:'cinza'};
+  const p=_addMeses(re.ultima_manutencao,5), dias=_diasDe(p);
+  if(dias<0) return {txt:`🔧 Manutenção vencida há ${-dias} dias`, cls:'vermelho'};
+  return {txt:`Próx. manutenção em ${dias} dias (${dataBR(_iso(p))})`, cls: dias<=15?'vermelho':dias<=45?'ambar':'verde'};
+}
+function renderMonitor(){
+  const el=$('#lista-monitor');
+  $('#monitor-vazio').classList.toggle('hidden', state.monitor.length>0);
+  el.innerHTML=state.monitor.map(c=>{
+    const res=(c.monitor_res||[]).slice().sort((a,b)=>(a.cidade||'').localeCompare(b.cidade||''));
+    const linhas=res.map(re=>{
+      const autos=(re.monitor_autos||[]).filter(a=>!a.resolvido);
+      const novos=autos.filter(a=>a.novo).length;
+      const f=funcStatus(re), m=manutStatus(re);
+      const alerta=autos.length?`<span class="status-badge st-pendente_material">🔴 ${autos.length} auto(s)${novos?' • '+novos+' novo(s)':''}</span>`:'';
+      return `<div class="re-row" data-id="${re.id}">
+        <div class="re-top"><b>${esc(re.re_codigo)}</b> <span class="re-nome">${esc(re.nome_edificacao||'(sem nome)')}</span> <small>${esc(re.cidade||'')}</small></div>
+        <div class="re-badges"><span class="dias urg-${f.cls}">${f.txt}</span><span class="dias urg-${m.cls}">${m.txt}</span>${alerta}</div>
+      </div>`;
+    }).join('') || '<div class="card-end" style="padding:6px 2px">Nenhuma RE cadastrada.</div>';
+    return `<div class="cliente-mon">
+      <div class="cliente-mon-top">
+        <div><div class="cliente-nome">${esc(c.nome)}</div>
+          <small>${c.telefone?'📞 '+esc(c.telefone)+'  ':''}${c.contabilidade_nome?'· Contab.: '+esc(c.contabilidade_nome)+(c.contabilidade_telefone?' ('+esc(c.contabilidade_telefone)+')':''):''}</small></div>
+        ${state.isAdmin?`<div class="cli-acoes"><button class="btn btn-sec btn-sm js-add-re" data-c="${c.id}">+ RE</button><button class="btn btn-ghost btn-sm js-edit-cli" data-c="${c.id}">✏️</button></div>`:''}
+      </div>
+      <div class="re-list">${linhas}</div></div>`;
+  }).join('');
+  el.querySelectorAll('.re-row').forEach(r=>r.onclick=()=>abrirRE(r.dataset.id));
+  el.querySelectorAll('.js-add-re').forEach(b=>b.onclick=ev=>{ev.stopPropagation(); formRE(b.dataset.c,null);});
+  el.querySelectorAll('.js-edit-cli').forEach(b=>b.onclick=ev=>{ev.stopPropagation(); formClienteMon(state.monitor.find(c=>c.id===b.dataset.c));});
+}
+function formClienteMon(c){
+  abrirModal(`<h2>${c?'Editar cliente':'Novo cliente'}</h2><form id="form-cli-mon">
+    <label class="campo full">Nome *<input name="nome" required value="${esc(c?.nome||'')}"></label>
+    <label class="campo full">Telefone do cliente<input name="telefone" value="${esc(c?.telefone||'')}"></label>
+    <label class="campo full">Contabilidade — nome<input name="contabilidade_nome" value="${esc(c?.contabilidade_nome||'')}"></label>
+    <label class="campo full">Contabilidade — telefone<input name="contabilidade_telefone" value="${esc(c?.contabilidade_telefone||'')}"></label>
+    <div class="form-acoes">${c?'<button type="button" class="btn btn-ghost" id="cli-del">Excluir</button>':''}<button type="button" class="btn btn-ghost" id="cli-cancel">Cancelar</button><button type="submit" class="btn btn-primary">Salvar</button></div></form>`);
+  $('#cli-cancel').onclick=fecharModal;
+  $('#cli-del') && ($('#cli-del').onclick=async()=>{ if(!confirm('Excluir o cliente e todas as RE/autos dele?'))return; await sb.from('monitor_clientes').delete().eq('id',c.id); await carregarMonitor(); fecharModal(); toast('Cliente excluído.'); });
+  $('#form-cli-mon').onsubmit=async e=>{ e.preventDefault(); const f=e.target;
+    const d={nome:f.nome.value.trim(), telefone:f.telefone.value.trim()||null, contabilidade_nome:f.contabilidade_nome.value.trim()||null, contabilidade_telefone:f.contabilidade_telefone.value.trim()||null};
+    if(!d.nome){toast('Informe o nome.',true);return;}
+    const {error}= c ? await sb.from('monitor_clientes').update(d).eq('id',c.id) : await sb.from('monitor_clientes').insert(d);
+    if(error){toast(error.message,true);return;}
+    await carregarMonitor(); fecharModal(); toast('Cliente salvo.'); };
+}
+function formRE(clienteId, re){
+  abrirModal(`<h2>${re?'Editar RE':'Nova RE'}</h2><form id="form-re">
+    <label class="campo full">Código RE *<input name="re_codigo" required placeholder="RE8055001147A" value="${esc(re?.re_codigo||'')}"></label>
+    <label class="campo full">Nome da edificação<input name="nome_edificacao" value="${esc(re?.nome_edificacao||'')}"></label>
+    <label class="campo">Cidade<input name="cidade" value="${esc(re?.cidade||'')}"></label>
+    <label class="campo">Endereço<input name="endereco" value="${esc(re?.endereco||'')}"></label>
+    <p class="det-sub">Nome/cidade/endereço o coletor preenche sozinho — pode deixar em branco.</p>
+    <div class="form-acoes"><button type="button" class="btn btn-ghost" id="re-cancel">Cancelar</button><button type="submit" class="btn btn-primary">Salvar</button></div></form>`);
+  $('#re-cancel').onclick=fecharModal;
+  $('#form-re').onsubmit=async e=>{ e.preventDefault(); const f=e.target;
+    const d={cliente_id:clienteId, re_codigo:f.re_codigo.value.trim().toUpperCase(), nome_edificacao:f.nome_edificacao.value.trim()||null, cidade:f.cidade.value.trim()||null, endereco:f.endereco.value.trim()||null};
+    if(!d.re_codigo){toast('Informe o código RE.',true);return;}
+    const {error}= re ? await sb.from('monitor_res').update(d).eq('id',re.id) : await sb.from('monitor_res').insert(d);
+    if(error){toast(error.message,true);return;}
+    await carregarMonitor(); fecharModal(); toast('RE salva.'); };
+}
+function abrirRE(id){
+  let re,cli; for(const c of state.monitor){ const r=(c.monitor_res||[]).find(x=>x.id===id); if(r){re=r;cli=c;break;} }
+  if(!re) return;
+  const f=funcStatus(re), m=manutStatus(re);
+  const autos=(re.monitor_autos||[]).slice().sort((a,b)=>(b.novo?1:0)-(a.novo?1:0));
+  const bg=k=>k==='vermelho'?'#fde7e7':k==='ambar'?'#fef3da':k==='verde'?'#e7f7ee':'#eef1f6';
+  let html=`<h2>${esc(re.re_codigo)}</h2><div class="det-sub">${esc(re.nome_edificacao||'(sem nome)')} · ${esc(re.cidade||'')} · cliente <b>${esc(cli.nome)}</b></div>`;
+  html+=`<div class="det-sec"><h3>Funcionamento (validade = emissão + 1 ano)</h3>
+    <div class="det-linha"><span class="lbl">Última emissão</span><span>${re.funcionamento_data?dataBR(re.funcionamento_data):'—'}</span></div>
+    <div class="nota" style="background:${bg(f.cls)};color:#333">${f.txt}</div>
+    ${cli.contabilidade_nome?`<div class="det-linha"><span class="lbl">Avisar</span><span>Contab.: ${esc(cli.contabilidade_nome)} ${cli.contabilidade_telefone?esc(cli.contabilidade_telefone):''}</span></div>`:''}
+    ${state.isAdmin?`<div class="acoes-status"><button class="btn btn-sec btn-sm" id="re-func">Definir data de emissão</button></div>`:''}</div>`;
+  html+=`<div class="det-sec"><h3>Manutenção (a cada 5 meses)</h3>
+    <div class="det-linha"><span class="lbl">Última</span><span>${re.ultima_manutencao?dataBR(re.ultima_manutencao):'—'}</span></div>
+    <div class="nota" style="background:${bg(m.cls)};color:#333">${m.txt}</div>
+    ${state.isAdmin?`<div class="acoes-status"><button class="btn btn-ok btn-sm" id="re-manut">✓ Fiz manutenção hoje</button><button class="btn btn-sec btn-sm" id="re-manut-data">Outra data…</button></div>`:''}</div>`;
+  html+=`<div class="det-sec"><h3>Autos (AF / Multas)</h3>`;
+  html+= autos.length ? autos.map(a=>`<div class="auto-row${a.resolvido?' resolvido':''}">
+      <span class="chip-serv ${a.tipo==='MUL'?'SDAI':'MANUT_SHP'}">${esc(a.tipo)}</span> <b>${esc(a.codigo)}</b> ${a.data?'· '+esc(a.data):''}
+      ${a.novo&&!a.resolvido?'<span class="status-badge st-pendente_material">NOVO</span>':''} ${a.situacao?'· '+esc(a.situacao):''}
+      ${a.exigencia?'<div class="auto-exig">'+esc(a.exigencia)+'</div>':''}
+      ${state.isAdmin&&!a.resolvido?`<button class="btn btn-ok btn-sm js-resolver" data-id="${a.id}">Resolver</button>`:''}</div>`).join('')
+    : '<span class="card-end">Nenhum auto encontrado. O coletor checa o e-SCI a cada 2 dias.</span>';
+  html+=`</div>`;
+  if(re.ultima_verificacao) html+=`<p class="det-sub">Última checagem do e-SCI: ${new Date(re.ultima_verificacao).toLocaleString('pt-BR')}</p>`;
+  if(state.isAdmin) html+=`<div class="form-acoes"><button class="btn btn-ghost" id="re-del">Excluir RE</button><button class="btn btn-sec" id="re-edit">Editar RE</button></div>`;
+  abrirModal(html);
+  $('#re-func') && ($('#re-func').onclick=async()=>{ const v=prompt('Data de emissão do último funcionamento (AAAA-MM-DD):', re.funcionamento_data||''); if(v===null)return; await sb.from('monitor_res').update({funcionamento_data:v.trim()||null}).eq('id',re.id); await carregarMonitor(); abrirRE(re.id); toast('Funcionamento atualizado.'); });
+  $('#re-manut') && ($('#re-manut').onclick=async()=>{ await sb.from('monitor_res').update({ultima_manutencao:new Date().toISOString().slice(0,10)}).eq('id',re.id); await carregarMonitor(); abrirRE(re.id); toast('Manutenção registrada (hoje).'); });
+  $('#re-manut-data') && ($('#re-manut-data').onclick=async()=>{ const v=prompt('Data da última manutenção (AAAA-MM-DD):', re.ultima_manutencao||''); if(v===null)return; await sb.from('monitor_res').update({ultima_manutencao:v.trim()||null}).eq('id',re.id); await carregarMonitor(); abrirRE(re.id); });
+  $('#re-edit') && ($('#re-edit').onclick=()=>formRE(cli.id, re));
+  $('#re-del') && ($('#re-del').onclick=async()=>{ if(!confirm('Excluir esta RE?'))return; await sb.from('monitor_res').delete().eq('id',re.id); await carregarMonitor(); fecharModal(); toast('RE excluída.'); });
+  document.querySelectorAll('.js-resolver').forEach(b=>b.onclick=async()=>{ await sb.from('monitor_autos').update({resolvido:true,novo:false}).eq('id',b.dataset.id); await carregarMonitor(); abrirRE(re.id); toast('Auto resolvido.'); });
 }
 
 /* ---------- start ---------- */

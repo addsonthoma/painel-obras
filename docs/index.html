@@ -52,6 +52,7 @@
       <nav class="modulos" id="modulos">
         <button class="modulo ativa" data-mod="obras">🏗️ Obras</button>
         <button class="modulo" data-mod="leads">📍 Leads</button>
+        <button class="modulo" data-mod="monitor">🛡️ Monitoramento</button>
       </nav>
       <div class="topbar-user">
         <span id="user-nome"></span>
@@ -117,6 +118,18 @@
         <a href="https://addsonthoma.github.io/rodrigues-painel/qbQv3yHGdx6ocaYE/" target="_blank" rel="noopener" class="btn btn-sec btn-sm leads-fs">Abrir em tela cheia ↗</a>
       </div>
       <iframe id="leads-frame" title="Painel de Leads CBMSC" loading="lazy"></iframe>
+    </div>
+
+    <!-- ===================== MÓDULO MONITORAMENTO ===================== -->
+    <div id="mod-monitor" class="modulo-view hidden">
+      <div class="conteudo">
+        <div class="barra-acoes">
+          <h2 class="view-titulo">Monitoramento de edificações <small>(e-SCI / Bombeiros)</small></h2>
+          <div class="barra-dir"><button class="btn btn-primary so-admin" id="btn-novo-cliente-mon">+ Novo cliente</button></div>
+        </div>
+        <div id="lista-monitor" class="lista-monitor"></div>
+        <div id="monitor-vazio" class="vazio hidden">Nenhum cliente monitorado ainda.</div>
+      </div>
     </div>
   </div><!-- /app -->
 

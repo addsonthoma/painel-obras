@@ -196,6 +196,23 @@ code{background:#eef1f6; padding:1px 6px; border-radius:6px; font-size:.85em}
 #leads-frame{width:100%; height:calc(100vh - 104px); border:0; display:block; background:#0e1117}
 @media (max-width:640px){ #leads-frame{height:calc(100vh - 156px)} .modulo{font-size:.9rem; padding:8px 11px} }
 
+/* monitoramento */
+.lista-monitor{display:flex; flex-direction:column; gap:16px}
+.cliente-mon{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:16px}
+.cliente-mon-top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px}
+.cliente-nome{font-weight:700; font-size:1.1rem}
+.cli-acoes{display:flex; gap:6px; flex-shrink:0}
+.re-list{display:flex; flex-direction:column; gap:8px; margin-top:6px}
+.re-row{border:1px solid var(--linha); border-radius:10px; padding:10px 12px; cursor:pointer; transition:background .08s}
+.re-row:hover{background:#f8f9fc}
+.re-top{font-size:.95rem; margin-bottom:6px}
+.re-nome{color:var(--tinta-suave)}
+.re-badges{display:flex; gap:6px; flex-wrap:wrap}
+.re-badges .dias{font-size:.78rem; font-weight:700; padding:3px 9px; border-radius:20px}
+.auto-row{border-top:1px solid var(--linha); padding:8px 0; font-size:.9rem}
+.auto-row.resolvido{opacity:.55}
+.auto-exig{color:var(--tinta-suave); font-size:.82rem; margin-top:3px}
+
 /* ---- responsivo / TV ---- */
 @media (max-width:640px){
   .topbar{flex-wrap:wrap; height:auto; padding:8px 12px; gap:8px}
