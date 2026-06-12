@@ -23,7 +23,8 @@ create table if not exists public.monitor_res (
   cidade             text,
   endereco           text,
   numg_edificacao    bigint,            -- id interno do e-SCI (usado pelo coletor logado)
-  funcionamento_data date,              -- emissão do último funcionamento (validade = +1 ano)
+  funcionamento_data date,              -- emissão do último funcionamento
+  funcionamento_validade date,          -- validade real (do e-SCI; senão app usa emissão +1 ano)
   ultima_manutencao  date,              -- última manutenção feita (próxima = +5 meses)
   ultima_verificacao timestamptz,       -- última checagem do coletor no e-SCI
   ativo              boolean not null default true,

@@ -769,8 +769,11 @@ function _addAnos(s,n){ const d=new Date(s+'T00:00:00'); d.setFullYear(d.getFull
 function _diasDe(d){ const h=new Date(); h.setHours(0,0,0,0); return Math.round((d-h)/86400000); }
 function _iso(d){ return d.toISOString().slice(0,10); }
 function funcStatus(re){
-  if(!re.funcionamento_data) return {txt:'Funcionamento: não informado', cls:'cinza'};
-  const v=_addAnos(re.funcionamento_data,1), dias=_diasDe(v);
+  let v=null;
+  if(re.funcionamento_validade) v=new Date(re.funcionamento_validade+'T00:00:00');
+  else if(re.funcionamento_data) v=_addAnos(re.funcionamento_data,1);
+  if(!v) return {txt:'Funcionamento: não informado', cls:'cinza'};
+  const dias=_diasDe(v);
   if(dias<0) return {txt:`⚠ Funcionamento VENCIDO há ${-dias} dias`, cls:'vermelho'};
   return {txt:`Funcionamento vence em ${dias} dias (${dataBR(_iso(v))})`, cls: dias<=30?'vermelho':dias<=90?'ambar':'verde'};
 }
