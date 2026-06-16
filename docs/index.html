@@ -55,6 +55,7 @@
         <button class="modulo" data-mod="monitor">🛡️ Monitoramento</button>
       </nav>
       <div class="topbar-user">
+        <button class="btn btn-ghost" id="btn-ppci" title="Abrir o programa de Levantamento PPCI (instalado neste PC)" onclick="abrirPPCI()">📐 Levantamento PPCI</button>
         <span id="user-nome"></span>
         <span class="papel-badge" id="user-papel"></span>
         <button class="btn btn-ghost" id="btn-senha" title="Trocar minha senha">🔑</button>
@@ -151,6 +152,20 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+    // Abre o programa desktop de Levantamento PPCI via protocolo registrado no PC
+    // (rode "INSTALAR (1a vez).bat" da pasta "Levantamento PPCI - Rodrigues" para registrar).
+    function abrirPPCI() {
+      var abriu = false;
+      window.addEventListener('blur', function () { abriu = true; }, { once: true });
+      try { window.location.href = 'rodriguesppci://abrir'; } catch (e) {}
+      setTimeout(function () {
+        if (!abriu) {
+          alert('Para abrir o Levantamento PPCI pelo painel, rode uma vez o arquivo ' +
+                '"INSTALAR (1a vez).bat" da pasta "Levantamento PPCI - Rodrigues" neste computador. ' +
+                'Depois este botão abre o programa direto.');
+        }
+      }, 1200);
     }
   </script>
 </body>
