@@ -901,7 +901,7 @@ function abrirRE(id){
 const ORC_STATUS = {
   orcar:   { label:'A orçar',  cls:'orc-orcar' },
   enviado: { label:'Enviado',  cls:'orc-enviado' },
-  ganho:   { label:'🏆 Ganho', cls:'orc-ganho' },
+  ganho:   { label:'✅ Fechado', cls:'orc-ganho' },
   perdido: { label:'Perdido',  cls:'orc-perdido' },
 };
 const MOTIVO_PERDA = {
@@ -1008,7 +1008,7 @@ function cardOrc(o){
   } else if(o.status==='perdido'){
     acoes=`<span class="cob-badge orc-perdido">${esc(MOTIVO_PERDA[o.motivo_perda_tipo]||'Perdido')}</span>`;
   } else if(o.status==='ganho'){
-    acoes=`<span class="cob-badge orc-ganho">${o.obra_id?'virou obra ✓':'ganho'}</span>`;
+    acoes=`<span class="cob-badge orc-ganho">${o.obra_id?'virou obra ✓':'fechado'}</span>`;
   }
   return `<div class="card-obra" data-id="${o.id}">
     <div class="card-topo">
@@ -1142,7 +1142,7 @@ function dialogContato(id){
       <textarea id="dc-obs" class="campo" style="width:100%;min-height:70px;font-family:inherit" placeholder="O que o cliente falou? (opcional)"></textarea>
       <button class="btn btn-primary" id="dc-reg" style="margin-top:8px">✅ Registrei contato (reinicia os 7 dias)</button></div>
     <div class="det-sec"><h3>Resultado</h3><div class="acoes-status">
-      <button class="btn btn-ok btn-sm" id="dc-ganho">🏆 Fechou conosco</button>
+      <button class="btn btn-ok btn-sm" id="dc-ganho">✅ Fechou conosco (vira obra)</button>
       <button class="btn btn-aviso btn-sm" id="dc-perdido">❌ Fechou com outro / desistiu</button></div></div>
     <div class="form-acoes"><button class="btn btn-ghost" id="dc-volta">Voltar</button></div>`);
   $('#dc-wa') && ($('#dc-wa').onclick=()=>whatsappOrc(o.id));
@@ -1162,14 +1162,15 @@ function dialogContato(id){
 async function ganharOrc(o){
   const ok=await salvarOrcCampos(o.id,{ status:'ganho', ganho_em:new Date().toISOString(), proximo_followup:null });
   if(!ok) return;
-  await contatoLog(o.id,'sistema','🏆 Cliente fechou conosco (ganho).');
-  await carregarTudo(true); toast('Marcado como GANHO. 🏆');
-  // bridge: vira obra (só admin mexe em obras)
+  await contatoLog(o.id,'sistema','✅ Cliente fechou conosco — orçamento FECHADO.');
+  // joga AUTOMÁTICO para Obras (só admin tem permissão de escrever em obras)
   if(state.isAdmin && !o.obra_id){
-    if(confirm(`Lançar "${o.cliente}" como obra agora? (você define serviços, equipe e prazo na aba Obras)`)){
-      await criarObraDeOrcamento(o);
-    } else { abrirOrc(o.id); }
-  } else { if(state.modalAberto) abrirOrc(o.id); }
+    await criarObraDeOrcamento(o);   // já recarrega, dá toast e reabre o detalhe
+  } else {
+    await carregarTudo(true);
+    toast(state.isAdmin ? 'Fechado! 🏆' : 'Fechado! 🏆 (um admin vai lançar como obra)');
+    if(state.modalAberto) abrirOrc(o.id);
+  }
 }
 async function criarObraDeOrcamento(o){
   const dados={ cliente:o.cliente, telefone_cliente:o.telefone||null, orcamento_qs:o.orcamento_qs||null,
@@ -1181,8 +1182,8 @@ async function criarObraDeOrcamento(o){
   if(itens.length) await sb.from('obra_itens').insert(itens.map((i,ix)=>({ obra_id:oid, produto:i.produto, quantidade:i.quantidade, unidade:i.unidade||null, ordem:ix })));
   await sb.from('obra_financeiro').upsert({ obra_id:oid, valor_total:o.valor_total??null, status_cobranca:'nao_aplicavel' });
   await sb.from('orcamentos').update({ obra_id:oid }).eq('id',o.id);
-  await logar(oid,'criação','Veio do orçamento ganho de '+o.cliente);
-  await carregarTudo(true); toast('Obra criada a partir do orçamento. ✓ Veja na aba Obras.');
+  await logar(oid,'criação','Veio do orçamento fechado de '+o.cliente);
+  await carregarTudo(true); toast('Fechado e lançado como obra! ✓ Veja na aba Obras (defina serviços, equipe e prazo).');
   if(state.modalAberto) abrirOrc(o.id);
 }
 
