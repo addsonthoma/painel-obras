@@ -128,6 +128,10 @@ code{background:#eef1f6; padding:1px 6px; border-radius:6px; font-size:.85em}
 .orc-enviado{background:var(--info-bg); color:var(--info)}
 .orc-ganho{background:var(--ok-bg); color:var(--ok)}
 .orc-perdido{background:var(--perigo-bg); color:var(--perigo)}
+/* botão WhatsApp (verde oficial + glifo) */
+.btn-wa{background:#25D366; color:#fff}
+.btn-wa:hover{background:#1fae57}
+.btn-wa svg{width:16px; height:16px}
 
 /* ---- modal ---- */
 .modal-fundo{position:fixed; inset:0; background:rgba(15,18,28,.5); display:flex; align-items:flex-start;

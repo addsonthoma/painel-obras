@@ -41,7 +41,7 @@ const state = {
   user:null, perfil:null, isAdmin:false, isComercial:false,
   obras:[], equipe:[], financeiro:{}, monitor:[], orcamentos:[], orcErro:null,
   modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
-  abaOrc:'aberto', filtroOrc:'todos', buscaOrc:'',
+  abaOrc:'pendente', filtroOrc:'todos', buscaOrc:'',
   modalAberto:false,
 };
 
@@ -913,6 +913,8 @@ const MOTIVO_PERDA = {
   outro:        'Outro',
 };
 const ORC_INTERVALO = 7;
+// Ícone oficial do WhatsApp (glifo) para os botões
+const WA_ICON = '<svg viewBox="0 0 32 32" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M16 3C9.4 3 4 8.4 4 15c0 2.6.85 5.05 2.3 7.04L4.05 29l7.16-2.33A11.9 11.9 0 0 0 16 27c6.6 0 12-5.4 12-12S22.6 3 16 3zm0 21.8c-1.77 0-3.42-.52-4.82-1.4l-.34-.22-4.18 1.36 1.36-4.07-.23-.35A9.74 9.74 0 0 1 6.2 15c0-5.4 4.4-9.8 9.8-9.8s9.8 4.4 9.8 9.8-4.4 9.8-9.8 9.8zm5.36-7.33c-.29-.15-1.72-.85-1.99-.95-.27-.1-.46-.15-.66.15-.2.29-.76.94-.93 1.14-.17.2-.34.22-.63.07-.29-.15-1.23-.45-2.34-1.44-.86-.77-1.45-1.72-1.62-2.01-.17-.29-.02-.45.13-.59.13-.13.29-.34.43-.51.15-.17.19-.29.29-.49.1-.2.05-.37-.02-.51-.07-.15-.66-1.58-.9-2.17-.24-.57-.48-.49-.66-.5l-.56-.01c-.2 0-.51.07-.78.36-.27.29-1.02 1-1.02 2.43s1.05 2.82 1.19 3.01c.15.2 2.05 3.13 4.96 4.39.69.3 1.23.48 1.65.61.69.22 1.32.19 1.82.12.56-.09 1.72-.7 1.96-1.38.24-.68.24-1.26.17-1.38-.07-.12-.26-.2-.55-.34z"/></svg>';
 
 function orcBase(o){ return o.ultimo_contato || o.enviado_em; }
 function orcProxFollow(o){ const b=orcBase(o); if(!b) return null; const d=new Date(b); d.setDate(d.getDate()+(o.intervalo_dias||ORC_INTERVALO)); d.setHours(0,0,0,0); return d; }
@@ -944,17 +946,19 @@ $('#abas-orc') && $('#abas-orc').addEventListener('click', e=>{
 $('#busca-orc') && $('#busca-orc').addEventListener('input', e=>{ state.buscaOrc=e.target.value.toLowerCase(); renderOrcamentos(); });
 $('#btn-novo-orc') && $('#btn-novo-orc').addEventListener('click', ()=>formOrc(null));
 
+const ORC_ABA_STATUS = { pendente:'orcar', aberto:'enviado', ganho:'ganho', perdido:'perdido' };
 function orcContadores(){
-  const c={ aberto:0, ganho:0, perdido:0 };
-  state.orcamentos.forEach(o=>{ if(o.status==='orcar'||o.status==='enviado') c.aberto++; else if(c[o.status]!=null) c[o.status]++; });
-  $('#num-orc-aberto').textContent = c.aberto||'';
+  const c={ orcar:0, enviado:0, ganho:0, perdido:0 };
+  state.orcamentos.forEach(o=>{ if(c[o.status]!=null) c[o.status]++; });
+  $('#num-orc-pendente') && ($('#num-orc-pendente').textContent = c.orcar||'');
+  $('#num-orc-aberto').textContent = c.enviado||'';
   $('#num-orc-ganho').textContent  = c.ganho||'';
   $('#num-orc-perdido').textContent = c.perdido||'';
 }
 function renderFiltrosOrc(){
   const wrap=$('#filtros-orc'); if(!wrap) return;
   if(state.abaOrc!=='aberto'){ wrap.innerHTML=''; return; }
-  const def=[['todos','Todos'],['contato','Para contatar'],['orcar','A orçar'],['enviado','Enviados']];
+  const def=[['todos','Todos'],['contato','Para contatar']];
   wrap.innerHTML = def.map(([k,l])=>`<button class="chip-filtro ${state.filtroOrc===k?'ativo':''}" data-f="${k}">${l}</button>`).join('');
   wrap.querySelectorAll('.chip-filtro').forEach(c=>c.onclick=()=>{ state.filtroOrc=c.dataset.f; renderFiltrosOrc(); renderListaOrc(); });
 }
@@ -968,23 +972,14 @@ function renderListaOrc(){
     el.innerHTML=`<div class="vazio">Módulo indisponível — rode a migração <code>sql/migracao_orcamentos.sql</code> no Supabase.<br><small>${esc(state.orcErro)}</small></div>`;
     vazio.classList.add('hidden'); return;
   }
-  let arr=state.orcamentos.slice();
-  if(state.abaOrc==='aberto'){
-    arr=arr.filter(o=>o.status==='orcar'||o.status==='enviado');
-    if(state.filtroOrc==='orcar')   arr=arr.filter(o=>o.status==='orcar');
-    else if(state.filtroOrc==='enviado') arr=arr.filter(o=>o.status==='enviado');
-    else if(state.filtroOrc==='contato') arr=arr.filter(o=>o.status==='orcar' || (orcFollowInfo(o)?.dias<=0));
-  } else {
-    arr=arr.filter(o=>o.status===state.abaOrc);
-  }
+  let arr=state.orcamentos.filter(o=>o.status===ORC_ABA_STATUS[state.abaOrc]);
+  if(state.abaOrc==='aberto' && state.filtroOrc==='contato') arr=arr.filter(o=>orcFollowInfo(o)?.dias<=0);
   if(state.buscaOrc){ const q=state.buscaOrc; arr=arr.filter(o=>(o.cliente+' '+(o.origem||'')+' '+(o.orcamento_qs||'')+' '+(o.contato_nome||'')).toLowerCase().includes(q)); }
-  // ordena: a orçar no topo, depois follow-up mais urgente; ganho/perdido por data desc
+  // ordena: pendentes os mais antigos primeiro; em aberto por follow-up mais urgente; fechados/perdidos por data desc
   if(state.abaOrc==='aberto'){
-    arr.sort((a,b)=>{
-      const ka=a.status==='orcar'?-1e9:(orcFollowInfo(a)?.dias??1e8);
-      const kb=b.status==='orcar'?-1e9:(orcFollowInfo(b)?.dias??1e8);
-      return ka-kb;
-    });
+    arr.sort((a,b)=> (orcFollowInfo(a)?.dias??1e8)-(orcFollowInfo(b)?.dias??1e8));
+  } else if(state.abaOrc==='pendente'){
+    arr.sort((a,b)=> new Date(a.criado_em||0)-new Date(b.criado_em||0));
   } else {
     arr.sort((a,b)=> new Date(b.ganho_em||b.perdido_em||b.criado_em||0)-new Date(a.ganho_em||a.perdido_em||a.criado_em||0));
   }
@@ -1003,7 +998,7 @@ function cardOrc(o){
   if(o.status==='orcar'){
     acoes=`<button class="btn btn-ok btn-sm js-enviado" data-id="${o.id}">✓ Feito + enviado</button>`;
   } else if(o.status==='enviado'){
-    acoes=`${o.telefone?`<button class="btn btn-sec btn-sm js-wa" data-id="${o.id}">📲 WhatsApp</button>`:''}
+    acoes=`${o.telefone?`<button class="btn btn-wa btn-sm js-wa" data-id="${o.id}">${WA_ICON} WhatsApp</button>`:''}
       <button class="btn btn-primary btn-sm js-contato" data-id="${o.id}">📞 Contato / resultado</button>`;
   } else if(o.status==='perdido'){
     acoes=`<span class="cob-badge orc-perdido">${esc(MOTIVO_PERDA[o.motivo_perda_tipo]||'Perdido')}</span>`;
@@ -1057,7 +1052,7 @@ function abrirOrc(id){
   let botoes='';
   if(o.status==='orcar') botoes+=`<button class="btn btn-ok btn-sm" id="oc-enviado">✓ Feito + enviado ao cliente</button>`;
   if(o.status==='enviado'){
-    if(o.telefone) botoes+=`<button class="btn btn-sec btn-sm" id="oc-wa">📲 WhatsApp + mensagem</button>`;
+    if(o.telefone) botoes+=`<button class="btn btn-wa btn-sm" id="oc-wa">${WA_ICON} WhatsApp + mensagem</button>`;
     botoes+=`<button class="btn btn-primary btn-sm" id="oc-contato">📞 Registrar contato / resultado</button>`;
   }
   if(o.status==='ganho'||o.status==='perdido') botoes+=`<button class="btn btn-sec btn-sm" id="oc-reabrir">↩ Reabrir (voltar p/ aberto)</button>`;
@@ -1135,7 +1130,7 @@ function dialogContato(id){
   const o=state.orcamentos.find(x=>x.id===id); if(!o) return;
   abrirModal(`<h2>${esc(o.cliente)}</h2>
     <p class="det-sub">Follow-up — o que aconteceu no contato?</p>
-    ${o.telefone?`<div class="det-sec"><button class="btn btn-sec btn-sm" id="dc-wa">📲 Abrir WhatsApp com a mensagem pronta</button></div>`:''}
+    ${o.telefone?`<div class="det-sec"><button class="btn btn-wa btn-sm" id="dc-wa">${WA_ICON} Abrir WhatsApp com a mensagem pronta</button></div>`:''}
     <div class="det-sec"><h3>Falei com o cliente — segue negociando</h3>
       <label class="campo" style="margin-bottom:8px">Canal
         <select id="dc-canal"><option value="whatsapp">WhatsApp</option><option value="ligacao">Ligação</option><option value="email">E-mail</option><option value="presencial">Presencial</option><option value="outro">Outro</option></select></label>
@@ -1277,22 +1272,39 @@ async function lerLinhasPdf(file){
   return linhas;
 }
 function _valorBR(s){ return parseFloat(String(s).replace(/\./g,'').replace(',','.')); }
+function _ultimoValor(s){ const m=[...String(s).matchAll(/(\d{1,3}(?:\.\d{3})*,\d{2})/g)]; return m.length?_valorBR(m[m.length-1][1]):null; }
+// Lê o PDF do Quanto Sobra no layout REAL:
+//   cabeçalho da empresa · "Dados do Cliente" + nome · tabela
+//   "Item Código Descrição T Qtd. Unid. Valor Un. Total" (T = P produto / S serviço)
+//   · linhas "Totais ... 6.001,20" (total geral, sem R$).
 function extrairQS(linhas){
-  const texto=linhas.join('\n');
-  const re=/R\$\s*([\d.]+,\d{2})/gi; let m; const valores=[];
-  while((m=re.exec(texto))){ valores.push({ v:_valorBR(m[1]), i:m.index }); }
-  let total=null;
-  const li=texto.toLowerCase().lastIndexOf('total');
-  if(li>=0){ const dep=valores.filter(x=>x.i>=li); if(dep.length) total=dep[dep.length-1].v; }
-  if(total==null && valores.length) total=Math.max(...valores.map(x=>x.v));
-  // materiais: heurística conservadora — linha "descrição ... <qtd> <un?>" sem ser cabeçalho/serviço/total.
-  const itens=[]; const pular=/(total|subtotal|desconto|valor|m[aã]o de obra|servi[cç]o|cliente|or[cç]amento|vendedor|data|cnpj|cpf|endere[cç]o|telefone|forma de|pagamento|p[aá]gina)/i;
-  for(const ln of linhas){
-    if(pular.test(ln)) continue;
-    const mm=ln.match(/^(.{4,}?)\s+(\d{1,4}(?:[.,]\d{1,3})?)\s*(un|u|pç|pc|pe[cç]a|peças|m|mt|metros?|kg|cx|cj|rl|par|jg)?\.?\s*$/i);
-    if(mm){ const prod=mm[1].replace(/\s{2,}/g,' ').trim(); const q=_valorBR(mm[2]); if(prod.length>=4 && q>0 && q<100000) itens.push({produto:prod, quantidade:q, unidade:(mm[3]||'').trim()||null}); }
+  const L = linhas.map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const out = { cliente:null, orcamento_qs:null, total:null, itens:[] };
+
+  // Nº do orçamento -> ORxxx
+  for(const l of L){ const m=l.match(/or[çc]amento\s*n?[ºo°.]*\s*(\d{1,6})/i); if(m){ out.orcamento_qs='OR'+m[1]; break; } }
+
+  // Cliente: primeira linha "de verdade" depois de "Dados do Cliente"
+  const ic = L.findIndex(l=>/dados\s+do\s+cliente/i.test(l));
+  if(ic>=0){ for(let k=ic+1;k<L.length;k++){ const c=L[k].trim();
+    if(c && !/produtos\s+e\s+servi/i.test(c)){ out.cliente=c; break; } } }
+
+  // Total geral = valor da linha "Totais Produtos/Serviços" (fallbacks)
+  const lt = L.find(l=>/totais\s+produtos\s*\/\s*servi/i.test(l))
+          || L.find(l=>/^total\s+geral/i.test(l))
+          || L.find(l=>/^totais\s+produtos\b/i.test(l));
+  if(lt) out.total=_ultimoValor(lt);
+
+  // Itens: SÓ PRODUTOS (T = P). Mão de obra (S) fica de fora. Para ao chegar nos "Totais".
+  const reItem = /^(\d+)\s+(?:(\d{3,6})\s+)?(.+?)\s+([PS])\s+(\d+(?:[.,]\d+)?)\s+(?:([A-Za-zºª.]{1,6})\s+)?R\$\s*[\d.,]+\s+R\$\s*[\d.,]+$/i;
+  for(const l of L){
+    if(/^totais\b/i.test(l)) break;
+    const m=l.match(reItem);
+    if(m && m[4].toUpperCase()==='P'){
+      out.itens.push({ produto:m[3].replace(/\s{2,}/g,' ').trim(), quantidade:_valorBR(m[5]), unidade:(m[6]||'').replace(/\.$/,'')||null });
+    }
   }
-  return { total, itens };
+  return out;
 }
 
 /* ---------- formulário novo / editar orçamento ---------- */
@@ -1341,14 +1353,19 @@ function formOrc(o){
     const msg=$('#orc-import-msg'); msg.textContent='Lendo PDF…';
     try{
       const linhas=await lerLinhasPdf(file);
-      const { total, itens }=extrairQS(linhas);
-      if(total!=null) $('#form-orc [name=valor_total]').value=total.toFixed(2);
-      if(itens.length){
-        $('#orc-item-list').innerHTML=itens.map(orcItemRow).join('');
-        ligarRemoverOrc();
-      }
+      const qs=extrairQS(linhas);
+      const ff=$('#form-orc');
+      if(qs.cliente) ff.cliente.value=qs.cliente;
+      if(qs.orcamento_qs) ff.orcamento_qs.value=qs.orcamento_qs;
+      if(qs.total!=null) ff.valor_total.value=qs.total.toFixed(2);
+      if(qs.itens.length){ $('#orc-item-list').innerHTML=qs.itens.map(orcItemRow).join(''); ligarRemoverOrc(); }
       _qsFilePend=file; // anexa após salvar
-      msg.innerHTML=`✓ ${total!=null?'Valor: '+moeda(total)+'. ':''}${itens.length?itens.length+' materiais (confira!).':'Não achei materiais — adicione manualmente.'} O PDF será anexado ao salvar.`;
+      const partes=[];
+      if(qs.cliente) partes.push('Cliente: <b>'+esc(qs.cliente)+'</b>');
+      if(qs.orcamento_qs) partes.push(esc(qs.orcamento_qs));
+      if(qs.total!=null) partes.push('Valor '+moeda(qs.total));
+      partes.push(qs.itens.length?('<b>'+qs.itens.length+'</b> materiais (confira!)'):'sem materiais — adicione à mão');
+      msg.innerHTML='✓ '+partes.join(' · ')+'. O PDF será anexado ao salvar.';
     }catch(err){ msg.textContent='Não consegui ler o PDF: '+err.message; }
   };
   $('#form-orc').onsubmit=e=>{ e.preventDefault(); salvarOrc(o); };
