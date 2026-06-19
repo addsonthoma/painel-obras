@@ -220,7 +220,7 @@ function trocarModulo(mod){
   document.getElementById('mod-orcamentos').classList.toggle('hidden', mod!=='orcamentos');
   document.getElementById('mod-leads').classList.toggle('hidden', mod!=='leads');
   document.getElementById('mod-monitor').classList.toggle('hidden', mod!=='monitor');
-  if(mod==='leads'){ const fr=document.getElementById('leads-frame'); if(!fr.getAttribute('src')) fr.src=LEADS_URL; }
+  if(mod==='leads'){ const fr=document.getElementById('leads-frame'); if(!fr.getAttribute('src')) fr.src=LEADS_URL+'?v='+Date.now(); }
   if(mod==='monitor') carregarMonitor();
   if(mod==='orcamentos') renderOrcamentos();
 }
