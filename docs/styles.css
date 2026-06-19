@@ -123,6 +123,12 @@ code{background:#eef1f6; padding:1px 6px; border-radius:6px; font-size:.85em}
 .cob-cobranca_enviada{background:var(--info-bg); color:var(--info)}
 .cob-pago{background:var(--ok-bg); color:var(--ok)}
 
+/* ---- status do orçamento (follow-up comercial) ---- */
+.orc-orcar{background:#eef1f6; color:var(--tinta-suave)}
+.orc-enviado{background:var(--info-bg); color:var(--info)}
+.orc-ganho{background:var(--ok-bg); color:var(--ok)}
+.orc-perdido{background:var(--perigo-bg); color:var(--perigo)}
+
 /* ---- modal ---- */
 .modal-fundo{position:fixed; inset:0; background:rgba(15,18,28,.5); display:flex; align-items:flex-start;
   justify-content:center; padding:30px 16px; z-index:50; overflow:auto}

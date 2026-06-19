@@ -38,9 +38,10 @@ const COBRANCA = {
 /* ---------- estado ---------- */
 let sb = null;
 const state = {
-  user:null, perfil:null, isAdmin:false,
-  obras:[], equipe:[], financeiro:{}, monitor:[],
+  user:null, perfil:null, isAdmin:false, isComercial:false,
+  obras:[], equipe:[], financeiro:{}, monitor:[], orcamentos:[], orcErro:null,
   modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
+  abaOrc:'aberto', filtroOrc:'todos', buscaOrc:'',
   modalAberto:false,
 };
 
@@ -134,15 +135,22 @@ async function aposLogin(user){
   state.user = user;
   const { data:perfil } = await sb.from('perfis').select('*').eq('id', user.id).single();
   state.perfil = perfil; state.isAdmin = perfil?.papel === 'admin';
+  // Comercial = admin OU quem tem "vendedor" no perfil (Aline, Banana, Guilherme).
+  state.isComercial = state.isAdmin || !!perfil?.vendedor;
   $('#tela-login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   $('#user-nome').textContent = perfil?.nome || user.email;
-  const pb = $('#user-papel'); pb.textContent = state.isAdmin?'admin':'operação';
+  const pb = $('#user-papel'); pb.textContent = state.isAdmin?'admin':(perfil?.vendedor?'comercial':'operação');
   pb.classList.toggle('admin', state.isAdmin);
   document.querySelectorAll('.so-admin').forEach(el=>el.classList.toggle('hidden', !state.isAdmin));
-  // módulos visíveis por papel (admin vê tudo; operação só Obras)
-  const permitidos = state.isAdmin ? ['obras','leads','monitor'] : ['obras'];
+  // módulos visíveis por papel:
+  //  admin     -> tudo  ·  comercial (vendedor) -> Orçamentos + Leads  ·  operação -> Obras
+  let permitidos;
+  if(state.isAdmin) permitidos = ['obras','orcamentos','leads','monitor'];
+  else if(perfil?.vendedor) permitidos = ['orcamentos','leads'];
+  else permitidos = ['obras'];
   document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('hidden', !permitidos.includes(b.dataset.mod)));
+  if(!permitidos.includes(state.modulo)) trocarModulo(permitidos[0]);
   await carregarTudo();
   setInterval(()=>{ if(!state.modalAberto) carregarTudo(true); }, 60000);
 }
@@ -192,6 +200,12 @@ async function carregarTudo(silencioso){
     const { data:fin } = await sb.from('obra_financeiro').select('*');
     state.financeiro = {}; (fin||[]).forEach(f=> state.financeiro[f.obra_id]=f);
   }
+  if(state.isComercial){
+    const { data:orc, error:eo } = await sb.from('orcamentos')
+      .select('*, orcamento_itens(*)').order('criado_em',{ascending:false});
+    if(eo){ state.orcErro = eo.message; state.orcamentos = []; }
+    else { state.orcErro = null; state.orcamentos = orc||[]; }
+  }
   render();
 }
 
@@ -203,10 +217,12 @@ function trocarModulo(mod){
   state.modulo = mod;
   document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('ativa', b.dataset.mod===mod));
   document.getElementById('mod-obras').classList.toggle('hidden', mod!=='obras');
+  document.getElementById('mod-orcamentos').classList.toggle('hidden', mod!=='orcamentos');
   document.getElementById('mod-leads').classList.toggle('hidden', mod!=='leads');
   document.getElementById('mod-monitor').classList.toggle('hidden', mod!=='monitor');
   if(mod==='leads'){ const fr=document.getElementById('leads-frame'); if(!fr.getAttribute('src')) fr.src=LEADS_URL; }
   if(mod==='monitor') carregarMonitor();
+  if(mod==='orcamentos') renderOrcamentos();
 }
 $('#modulos').addEventListener('click', e=>{ const b=e.target.closest('.modulo'); if(b) trocarModulo(b.dataset.mod); });
 
@@ -228,7 +244,7 @@ $('#modal-fundo').addEventListener('click', e=>{ if(e.target.id==='modal-fundo')
 /* =====================================================================
    RENDER
    ===================================================================== */
-function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias(); if(state.isAdmin){ renderCobrancas(); renderEquipe(); } }
+function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias(); if(state.isAdmin){ renderCobrancas(); renderEquipe(); } if(state.isComercial) renderOrcamentos(); }
 
 function renderContadores(){
   const pend = state.obras.filter(o=>o.status_execucao==='pendente_material').length;
@@ -875,6 +891,500 @@ function abrirRE(id){
   $('#re-edit') && ($('#re-edit').onclick=()=>formRE(cli.id, re));
   $('#re-del') && ($('#re-del').onclick=async()=>{ if(!confirm('Excluir esta RE?'))return; await sb.from('monitor_res').delete().eq('id',re.id); await carregarMonitor(); fecharModal(); toast('RE excluída.'); });
   document.querySelectorAll('.js-resolver').forEach(b=>b.onclick=async()=>{ await sb.from('monitor_autos').update({resolvido:true,novo:false}).eq('id',b.dataset.id); await carregarMonitor(); abrirRE(re.id); toast('Auto resolvido.'); });
+}
+
+/* =====================================================================
+   MÓDULO ORÇAMENTOS — follow-up de propostas comerciais
+   Funil: Em aberto (a orçar / enviado) -> Ganho (vira obra) | Perdido (motivo)
+   Rolling de 7 dias: (ultimo_contato | enviado_em) + intervalo_dias
+   ===================================================================== */
+const ORC_STATUS = {
+  orcar:   { label:'A orçar',  cls:'orc-orcar' },
+  enviado: { label:'Enviado',  cls:'orc-enviado' },
+  ganho:   { label:'🏆 Ganho', cls:'orc-ganho' },
+  perdido: { label:'Perdido',  cls:'orc-perdido' },
+};
+const MOTIVO_PERDA = {
+  preco:        'Preço',
+  demora:       'Demora no orçamento',
+  sem_resposta: 'Sem resposta do cliente',
+  concorrencia: 'Fechou com concorrente',
+  desistiu:     'Desistiu da obra',
+  outro:        'Outro',
+};
+const ORC_INTERVALO = 7;
+
+function orcBase(o){ return o.ultimo_contato || o.enviado_em; }
+function orcProxFollow(o){ const b=orcBase(o); if(!b) return null; const d=new Date(b); d.setDate(d.getDate()+(o.intervalo_dias||ORC_INTERVALO)); d.setHours(0,0,0,0); return d; }
+function orcFollowInfo(o){
+  if(o.status!=='enviado') return null;
+  const p=orcProxFollow(o); if(!p) return null;
+  const h=new Date(); h.setHours(0,0,0,0);
+  const dias=Math.round((p-h)/86400000);
+  if(dias<0)  return { dias, cls:'vermelho', txt:`follow-up atrasado ${-dias}d`, prox:p };
+  if(dias===0) return { dias, cls:'vermelho', txt:'follow-up hoje', prox:p };
+  if(dias<=2) return { dias, cls:'ambar',   txt:`follow-up em ${dias}d`, prox:p };
+  return { dias, cls:'verde', txt:`follow-up em ${dias}d`, prox:p };
+}
+function msgFollowWhats(o){
+  const nome = o.contato_nome ? ' '+o.contato_nome.split(' ')[0] : '';
+  const orc  = o.orcamento_qs ? ' ('+o.orcamento_qs+')' : '';
+  return `Olá${nome}! Aqui é da Rodrigues Preventivos 🧯\n`+
+    `Passando para saber se você conseguiu analisar o orçamento${orc} que enviamos. `+
+    `Ficamos à disposição para tirar dúvidas e ajustar o que for preciso para fecharmos juntos. Podemos seguir?`;
+}
+
+/* ---------- navegação / busca / filtros ---------- */
+$('#abas-orc') && $('#abas-orc').addEventListener('click', e=>{
+  const b=e.target.closest('.aba'); if(!b) return;
+  state.abaOrc=b.dataset.abao;
+  $('#abas-orc').querySelectorAll('.aba').forEach(a=>a.classList.toggle('ativa', a===b));
+  renderOrcamentos();
+});
+$('#busca-orc') && $('#busca-orc').addEventListener('input', e=>{ state.buscaOrc=e.target.value.toLowerCase(); renderOrcamentos(); });
+$('#btn-novo-orc') && $('#btn-novo-orc').addEventListener('click', ()=>formOrc(null));
+
+function orcContadores(){
+  const c={ aberto:0, ganho:0, perdido:0 };
+  state.orcamentos.forEach(o=>{ if(o.status==='orcar'||o.status==='enviado') c.aberto++; else if(c[o.status]!=null) c[o.status]++; });
+  $('#num-orc-aberto').textContent = c.aberto||'';
+  $('#num-orc-ganho').textContent  = c.ganho||'';
+  $('#num-orc-perdido').textContent = c.perdido||'';
+}
+function renderFiltrosOrc(){
+  const wrap=$('#filtros-orc'); if(!wrap) return;
+  if(state.abaOrc!=='aberto'){ wrap.innerHTML=''; return; }
+  const def=[['todos','Todos'],['contato','Para contatar'],['orcar','A orçar'],['enviado','Enviados']];
+  wrap.innerHTML = def.map(([k,l])=>`<button class="chip-filtro ${state.filtroOrc===k?'ativo':''}" data-f="${k}">${l}</button>`).join('');
+  wrap.querySelectorAll('.chip-filtro').forEach(c=>c.onclick=()=>{ state.filtroOrc=c.dataset.f; renderFiltrosOrc(); renderListaOrc(); });
+}
+function renderOrcamentos(){
+  if(!$('#lista-orc')) return;
+  orcContadores(); renderFiltrosOrc(); renderListaOrc();
+}
+function renderListaOrc(){
+  const el=$('#lista-orc'), vazio=$('#orc-vazio');
+  if(state.orcErro){
+    el.innerHTML=`<div class="vazio">Módulo indisponível — rode a migração <code>sql/migracao_orcamentos.sql</code> no Supabase.<br><small>${esc(state.orcErro)}</small></div>`;
+    vazio.classList.add('hidden'); return;
+  }
+  let arr=state.orcamentos.slice();
+  if(state.abaOrc==='aberto'){
+    arr=arr.filter(o=>o.status==='orcar'||o.status==='enviado');
+    if(state.filtroOrc==='orcar')   arr=arr.filter(o=>o.status==='orcar');
+    else if(state.filtroOrc==='enviado') arr=arr.filter(o=>o.status==='enviado');
+    else if(state.filtroOrc==='contato') arr=arr.filter(o=>o.status==='orcar' || (orcFollowInfo(o)?.dias<=0));
+  } else {
+    arr=arr.filter(o=>o.status===state.abaOrc);
+  }
+  if(state.buscaOrc){ const q=state.buscaOrc; arr=arr.filter(o=>(o.cliente+' '+(o.origem||'')+' '+(o.orcamento_qs||'')+' '+(o.contato_nome||'')).toLowerCase().includes(q)); }
+  // ordena: a orçar no topo, depois follow-up mais urgente; ganho/perdido por data desc
+  if(state.abaOrc==='aberto'){
+    arr.sort((a,b)=>{
+      const ka=a.status==='orcar'?-1e9:(orcFollowInfo(a)?.dias??1e8);
+      const kb=b.status==='orcar'?-1e9:(orcFollowInfo(b)?.dias??1e8);
+      return ka-kb;
+    });
+  } else {
+    arr.sort((a,b)=> new Date(b.ganho_em||b.perdido_em||b.criado_em||0)-new Date(a.ganho_em||a.perdido_em||a.criado_em||0));
+  }
+  el.innerHTML = arr.map(cardOrc).join('');
+  vazio.classList.toggle('hidden', arr.length>0);
+  ligarCardsOrc();
+}
+function cardOrc(o){
+  const f=orcFollowInfo(o);
+  const st=ORC_STATUS[o.status]||{label:o.status,cls:''};
+  const nItens=(o.orcamento_itens||[]).length;
+  const linhaFollow = f ? `<div class="card-prazo">⏱ <span class="dias urg-${f.cls}">${f.txt}</span>
+      <small>próx. ${dataBR(_iso(f.prox))}</small></div>` : '';
+  const valor = o.valor_total!=null ? `<div class="card-or">${moeda(o.valor_total)}</div>` : '';
+  let acoes='';
+  if(o.status==='orcar'){
+    acoes=`<button class="btn btn-ok btn-sm js-enviado" data-id="${o.id}">✓ Feito + enviado</button>`;
+  } else if(o.status==='enviado'){
+    acoes=`${o.telefone?`<button class="btn btn-sec btn-sm js-wa" data-id="${o.id}">📲 WhatsApp</button>`:''}
+      <button class="btn btn-primary btn-sm js-contato" data-id="${o.id}">📞 Contato / resultado</button>`;
+  } else if(o.status==='perdido'){
+    acoes=`<span class="cob-badge orc-perdido">${esc(MOTIVO_PERDA[o.motivo_perda_tipo]||'Perdido')}</span>`;
+  } else if(o.status==='ganho'){
+    acoes=`<span class="cob-badge orc-ganho">${o.obra_id?'virou obra ✓':'ganho'}</span>`;
+  }
+  return `<div class="card-obra" data-id="${o.id}">
+    <div class="card-topo">
+      <div><div class="card-cliente">${esc(o.cliente)}</div>
+        ${o.origem?`<div class="card-end">origem: ${esc(o.origem)}</div>`:''}
+        ${o.orcamento_qs?`<div class="card-or">Orç. ${esc(o.orcamento_qs)}</div>`:''}
+        ${valor}</div>
+      <span class="status-badge ${st.cls}">${st.label}</span>
+    </div>
+    ${linhaFollow}
+    ${nItens?`<div class="card-equipe"><b>${nItens}</b> material(is) do QS</div>`:''}
+    <div class="card-rodape">${acoes}</div>
+  </div>`;
+}
+function ligarCardsOrc(){
+  $('#lista-orc').querySelectorAll('.card-obra').forEach(c=>{
+    c.querySelector('.js-enviado')?.addEventListener('click', ev=>{ ev.stopPropagation(); marcarEnviadoOrc(c.dataset.id); });
+    c.querySelector('.js-wa')?.addEventListener('click', ev=>{ ev.stopPropagation(); whatsappOrc(c.dataset.id); });
+    c.querySelector('.js-contato')?.addEventListener('click', ev=>{ ev.stopPropagation(); dialogContato(c.dataset.id); });
+    c.addEventListener('click', ()=> abrirOrc(c.dataset.id));
+  });
+}
+
+/* ---------- detalhe ---------- */
+function abrirOrc(id){
+  const o=state.orcamentos.find(x=>x.id===id); if(!o) return;
+  const f=orcFollowInfo(o); const st=ORC_STATUS[o.status]||{label:o.status,cls:''};
+  const itens=(o.orcamento_itens||[]).slice().sort((a,b)=>(a.ordem||0)-(b.ordem||0));
+  let html=`<h2>${esc(o.cliente)}</h2>
+    <div class="det-sub"><span class="status-badge ${st.cls}">${st.label}</span>
+      ${f?`<span class="dias urg-${f.cls}" style="margin-left:6px">${f.txt}</span>`:''}</div>`;
+
+  html+=`<div class="det-sec"><h3>Dados</h3>
+    ${o.origem?linha('Origem',esc(o.origem)):''}
+    ${o.contato_nome?linha('Contato',esc(o.contato_nome)):''}
+    ${o.telefone?linha('Telefone',esc(o.telefone)):''}
+    ${o.orcamento_qs?linha('Orçamento QS',esc(o.orcamento_qs)):''}
+    ${o.valor_total!=null?linha('Valor total',moeda(o.valor_total)):''}
+    ${o.responsavel?linha('Responsável',esc(o.responsavel)):''}
+    ${o.enviado_em?linha('Enviado em',new Date(o.enviado_em).toLocaleDateString('pt-BR')):''}
+    ${o.ultimo_contato?linha('Último contato',new Date(o.ultimo_contato).toLocaleDateString('pt-BR')):''}
+    ${f?linha('Próximo follow-up',dataBR(_iso(f.prox))):''}
+    ${o.status==='perdido'?linha('Motivo da perda',`<b>${esc(MOTIVO_PERDA[o.motivo_perda_tipo]||'—')}</b>${o.motivo_perda?' — '+esc(o.motivo_perda):''}`):''}</div>`;
+
+  // ações de funil
+  let botoes='';
+  if(o.status==='orcar') botoes+=`<button class="btn btn-ok btn-sm" id="oc-enviado">✓ Feito + enviado ao cliente</button>`;
+  if(o.status==='enviado'){
+    if(o.telefone) botoes+=`<button class="btn btn-sec btn-sm" id="oc-wa">📲 WhatsApp + mensagem</button>`;
+    botoes+=`<button class="btn btn-primary btn-sm" id="oc-contato">📞 Registrar contato / resultado</button>`;
+  }
+  if(o.status==='ganho'||o.status==='perdido') botoes+=`<button class="btn btn-sec btn-sm" id="oc-reabrir">↩ Reabrir (voltar p/ aberto)</button>`;
+  if(botoes) html+=`<div class="det-sec"><h3>Ações</h3><div class="acoes-status">${botoes}</div></div>`;
+
+  // materiais
+  html+=`<div class="det-sec"><h3>Materiais do QS (${itens.length})</h3>`;
+  html+= itens.length ? `<table class="tabela"><tr><th>Material</th><th>Qtd</th><th>Un.</th></tr>
+    ${itens.map(i=>`<tr><td>${esc(i.produto)}</td><td>${Number(i.quantidade).toLocaleString('pt-BR')}</td><td>${esc(i.unidade||'')}</td></tr>`).join('')}</table>`
+    : '<span class="card-end">Nenhum material. Use o formulário (importar do Quanto Sobra) ou edite.</span>';
+  html+=`</div>`;
+
+  // observações
+  html+=`<div class="det-sec"><h3>Observações</h3>
+    <div class="obs-box">${o.observacoes?esc(o.observacoes):'<span class="card-end">Sem observações.</span>'}</div></div>`;
+
+  // anexos
+  html+=`<div class="det-sec"><h3>Arquivos (projeto / Quanto Sobra)</h3>
+    <div id="oc-anexos">carregando…</div>
+    <button class="btn btn-sec btn-sm" id="oc-up-anexo" style="margin-top:8px">📎 Anexar arquivo</button>
+    <input type="file" id="oc-anexo-input" class="hidden"></div>`;
+
+  // histórico
+  html+=`<div class="det-sec"><h3>Histórico de contatos</h3><div id="oc-contatos">carregando…</div></div>`;
+
+  // rodapé
+  html+=`<div class="form-acoes"><button class="btn btn-ghost" id="oc-excluir">Excluir</button>
+    <button class="btn btn-sec" id="oc-editar">Editar</button></div>`;
+
+  abrirModal(html);
+  $('#oc-enviado') && ($('#oc-enviado').onclick=()=>marcarEnviadoOrc(o.id));
+  $('#oc-wa') && ($('#oc-wa').onclick=()=>whatsappOrc(o.id));
+  $('#oc-contato') && ($('#oc-contato').onclick=()=>dialogContato(o.id));
+  $('#oc-reabrir') && ($('#oc-reabrir').onclick=()=>reabrirOrc(o));
+  $('#oc-editar').onclick=()=>formOrc(o);
+  $('#oc-excluir').onclick=()=>excluirOrc(o);
+  $('#oc-up-anexo').onclick=()=>$('#oc-anexo-input').click();
+  $('#oc-anexo-input').onchange=e=>uploadAnexoOrc(o, e.target.files[0]);
+  carregarAnexosOrc(o.id);
+  carregarContatosOrc(o.id);
+}
+
+async function carregarContatosOrc(id){
+  const el=$('#oc-contatos'); if(!el) return;
+  const { data }=await sb.from('orcamento_contatos').select('*').eq('orcamento_id',id).order('criado_em',{ascending:false}).limit(20);
+  el.innerHTML = (data&&data.length) ? data.map(c=>`<div class="log-item">${c.canal?`<span class="chip-serv">${esc(c.canal)}</span> `:''}<b>${esc(c.usuario_nome||'—')}</b>${c.observacao?' — '+esc(c.observacao):''} <small>(${new Date(c.criado_em).toLocaleString('pt-BR')})</small></div>`).join('') : '<span class="card-end">Sem contatos registrados.</span>';
+}
+async function contatoLog(orcamento_id, canal, observacao){
+  await sb.from('orcamento_contatos').insert({ orcamento_id, canal, observacao, usuario_nome:state.perfil?.nome||state.user.email });
+}
+
+/* ---------- ações de funil ---------- */
+async function salvarOrcCampos(id, campos){ const {error}=await sb.from('orcamentos').update(campos).eq('id',id); if(error){toast(error.message,true);return false;} await carregarTudo(true); return true; }
+
+async function marcarEnviadoOrc(id){
+  const o=state.orcamentos.find(x=>x.id===id); if(!o) return;
+  const agora=new Date(); const prox=new Date(agora); prox.setDate(prox.getDate()+ORC_INTERVALO);
+  const ok=await salvarOrcCampos(id,{ status:'enviado', enviado_em:o.enviado_em||agora.toISOString(),
+    ultimo_contato:null, proximo_followup:_iso(prox) });
+  if(!ok) return;
+  await contatoLog(id,'sistema','Orçamento marcado como FEITO e ENVIADO ao cliente — follow-up em 7 dias.');
+  await carregarTudo(true); toast('Marcado como enviado. Follow-up em 7 dias. ✓');
+  if(state.modalAberto) abrirOrc(id);
+}
+function whatsappOrc(id){
+  const o=state.orcamentos.find(x=>x.id===id); if(!o) return;
+  const txt=msgFollowWhats(o); const l=waLink(o.telefone,txt);
+  if(!l){ toast('Sem telefone cadastrado.',true); return; }
+  try{ navigator.clipboard.writeText(txt); }catch(e){}
+  window.open(l,'_blank');
+  toast('WhatsApp aberto — mensagem já copiada.');
+}
+
+function dialogContato(id){
+  const o=state.orcamentos.find(x=>x.id===id); if(!o) return;
+  abrirModal(`<h2>${esc(o.cliente)}</h2>
+    <p class="det-sub">Follow-up — o que aconteceu no contato?</p>
+    ${o.telefone?`<div class="det-sec"><button class="btn btn-sec btn-sm" id="dc-wa">📲 Abrir WhatsApp com a mensagem pronta</button></div>`:''}
+    <div class="det-sec"><h3>Falei com o cliente — segue negociando</h3>
+      <label class="campo" style="margin-bottom:8px">Canal
+        <select id="dc-canal"><option value="whatsapp">WhatsApp</option><option value="ligacao">Ligação</option><option value="email">E-mail</option><option value="presencial">Presencial</option><option value="outro">Outro</option></select></label>
+      <textarea id="dc-obs" class="campo" style="width:100%;min-height:70px;font-family:inherit" placeholder="O que o cliente falou? (opcional)"></textarea>
+      <button class="btn btn-primary" id="dc-reg" style="margin-top:8px">✅ Registrei contato (reinicia os 7 dias)</button></div>
+    <div class="det-sec"><h3>Resultado</h3><div class="acoes-status">
+      <button class="btn btn-ok btn-sm" id="dc-ganho">🏆 Fechou conosco</button>
+      <button class="btn btn-aviso btn-sm" id="dc-perdido">❌ Fechou com outro / desistiu</button></div></div>
+    <div class="form-acoes"><button class="btn btn-ghost" id="dc-volta">Voltar</button></div>`);
+  $('#dc-wa') && ($('#dc-wa').onclick=()=>whatsappOrc(o.id));
+  $('#dc-volta').onclick=()=>abrirOrc(o.id);
+  $('#dc-reg').onclick=async()=>{
+    const agora=new Date(); const prox=new Date(agora); prox.setDate(prox.getDate()+ORC_INTERVALO);
+    const ok=await salvarOrcCampos(o.id,{ status:'enviado', enviado_em:o.enviado_em||agora.toISOString(),
+      ultimo_contato:agora.toISOString(), proximo_followup:_iso(prox) });
+    if(!ok) return;
+    await contatoLog(o.id, $('#dc-canal').value, $('#dc-obs').value.trim()||'Contato registrado.');
+    await carregarTudo(true); toast('Contato registrado. Reiniciou os 7 dias. ✓'); abrirOrc(o.id);
+  };
+  $('#dc-ganho').onclick=()=>ganharOrc(o);
+  $('#dc-perdido').onclick=()=>dialogPerda(o);
+}
+
+async function ganharOrc(o){
+  const ok=await salvarOrcCampos(o.id,{ status:'ganho', ganho_em:new Date().toISOString(), proximo_followup:null });
+  if(!ok) return;
+  await contatoLog(o.id,'sistema','🏆 Cliente fechou conosco (ganho).');
+  await carregarTudo(true); toast('Marcado como GANHO. 🏆');
+  // bridge: vira obra (só admin mexe em obras)
+  if(state.isAdmin && !o.obra_id){
+    if(confirm(`Lançar "${o.cliente}" como obra agora? (você define serviços, equipe e prazo na aba Obras)`)){
+      await criarObraDeOrcamento(o);
+    } else { abrirOrc(o.id); }
+  } else { if(state.modalAberto) abrirOrc(o.id); }
+}
+async function criarObraDeOrcamento(o){
+  const dados={ cliente:o.cliente, telefone_cliente:o.telefone||null, orcamento_qs:o.orcamento_qs||null,
+    observacoes:o.observacoes||null, equipe_sugerida:[], equipe_confirmada:[] };
+  const { data, error }=await sb.from('obras').insert(dados).select('id').single();
+  if(error){ toast('Não consegui criar a obra: '+error.message, true); return; }
+  const oid=data.id;
+  const itens=(o.orcamento_itens||[]);
+  if(itens.length) await sb.from('obra_itens').insert(itens.map((i,ix)=>({ obra_id:oid, produto:i.produto, quantidade:i.quantidade, unidade:i.unidade||null, ordem:ix })));
+  await sb.from('obra_financeiro').upsert({ obra_id:oid, valor_total:o.valor_total??null, status_cobranca:'nao_aplicavel' });
+  await sb.from('orcamentos').update({ obra_id:oid }).eq('id',o.id);
+  await logar(oid,'criação','Veio do orçamento ganho de '+o.cliente);
+  await carregarTudo(true); toast('Obra criada a partir do orçamento. ✓ Veja na aba Obras.');
+  if(state.modalAberto) abrirOrc(o.id);
+}
+
+function dialogPerda(o){
+  abrirModal(`<h2>Orçamento perdido — ${esc(o.cliente)}</h2>
+    <p class="det-sub">Por que o cliente não fechou conosco? (vai para a aba Perdidos)</p>
+    <div class="det-sec"><div class="equipe-pick">
+      ${Object.entries(MOTIVO_PERDA).map(([k,v],i)=>`<label class="pessoa-chip"><input type="radio" name="motivo" value="${k}" ${i===0?'checked':''} style="margin-right:5px">${v}</label>`).join('')}</div>
+      <textarea id="perda-obs" class="campo" style="width:100%;min-height:80px;font-family:inherit;margin-top:8px" placeholder="Detalhe (ex.: concorrente cobrou 20% menos; achou caro o SHP; sumiu depois do envio...)"></textarea></div>
+    <div class="form-acoes"><button class="btn btn-ghost" id="perda-volta">Voltar</button>
+      <button class="btn btn-aviso" id="perda-salva">Confirmar perda</button></div>`);
+  $('#perda-volta').onclick=()=>abrirOrc(o.id);
+  $('#perda-salva').onclick=async()=>{
+    const tipo=document.querySelector('input[name=motivo]:checked')?.value||'outro';
+    const obs=$('#perda-obs').value.trim()||null;
+    const ok=await salvarOrcCampos(o.id,{ status:'perdido', perdido_em:new Date().toISOString(),
+      motivo_perda_tipo:tipo, motivo_perda:obs, proximo_followup:null });
+    if(!ok) return;
+    await contatoLog(o.id,'sistema',`❌ Perdido — ${MOTIVO_PERDA[tipo]}${obs?': '+obs:''}`);
+    await carregarTudo(true); toast('Movido para Perdidos.'); abrirOrc(o.id);
+  };
+}
+async function reabrirOrc(o){
+  if(!confirm('Reabrir este orçamento (volta para "Em aberto" como enviado)?')) return;
+  const agora=new Date(); const prox=new Date(agora); prox.setDate(prox.getDate()+ORC_INTERVALO);
+  const ok=await salvarOrcCampos(o.id,{ status:'enviado', ganho_em:null, perdido_em:null,
+    motivo_perda_tipo:null, motivo_perda:null, ultimo_contato:agora.toISOString(), proximo_followup:_iso(prox) });
+  if(!ok) return;
+  await contatoLog(o.id,'sistema','↩ Reaberto.');
+  await carregarTudo(true); toast('Reaberto.'); abrirOrc(o.id);
+}
+async function excluirOrc(o){
+  if(!confirm(`Excluir o orçamento de "${o.cliente}"? Não dá pra desfazer.`)) return;
+  const {error}=await sb.from('orcamentos').delete().eq('id',o.id);
+  if(error){toast(error.message,true);return;}
+  fecharModal(); await carregarTudo(true); toast('Orçamento excluído.');
+}
+
+/* ---------- anexos do orçamento (bucket projetos, prefixo orcamentos/) ---------- */
+async function carregarAnexosOrc(id){
+  const el=$('#oc-anexos'); if(!el) return;
+  const { data, error }=await sb.from('orcamento_anexos').select('*').eq('orcamento_id',id).order('criado_em');
+  if(error){ el.innerHTML='<span class="card-end">Indisponível — rode a migração.</span>'; return; }
+  if(!data||!data.length){ el.innerHTML='<span class="card-end">Nenhum arquivo.</span>'; return; }
+  el.innerHTML=data.map(a=>`<div class="anexo-item"><a href="#" class="js-ver-oc-anexo" data-p="${esc(a.path)}">📄 ${esc(a.nome)}</a>
+    ${a.tipo==='quanto_sobra'?'<small>QS</small>':''}
+    <button class="x-row js-del-oc-anexo" data-id="${a.id}" data-p="${esc(a.path)}" title="Excluir">×</button></div>`).join('');
+  el.querySelectorAll('.js-ver-oc-anexo').forEach(x=>x.onclick=ev=>{ev.preventDefault(); verAnexo(x.dataset.p);});
+  el.querySelectorAll('.js-del-oc-anexo').forEach(x=>x.onclick=()=>excluirAnexoOrc(id, x.dataset.id, x.dataset.p));
+}
+async function uploadAnexoOrc(o, file, tipo){
+  if(!file) return; toast('Enviando arquivo…');
+  const path=`orcamentos/${o.id}/${Date.now()}_${file.name.replace(/[^\w.\-]/g,'_')}`;
+  const { error }=await sb.storage.from('projetos').upload(path, file);
+  if(error){ toast('Erro no upload: '+error.message, true); return; }
+  const { error:e2 }=await sb.from('orcamento_anexos').insert({ orcamento_id:o.id, nome:file.name, path,
+    mime:file.type||null, tamanho:file.size||null, tipo:tipo||'outro', criado_por_nome:state.perfil?.nome||state.user.email });
+  if(e2){ toast('Erro: '+e2.message, true); return; }
+  toast('Arquivo anexado.'); if(state.modalAberto) carregarAnexosOrc(o.id);
+}
+async function excluirAnexoOrc(orcId, id, path){
+  if(!confirm('Excluir este arquivo?')) return;
+  await sb.storage.from('projetos').remove([path]);
+  await sb.from('orcamento_anexos').delete().eq('id',id);
+  carregarAnexosOrc(orcId); toast('Arquivo removido.');
+}
+
+/* ---------- import do Quanto Sobra (PDF -> valor total + materiais) ---------- */
+let _qsFilePend=null;  // arquivo importado, anexado após salvar
+function carregarPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+    s.onload=()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; res(window.pdfjsLib); };
+    s.onerror=()=>rej(new Error('Não consegui carregar o leitor de PDF (precisa de internet).'));
+    document.head.appendChild(s);
+  });
+}
+async function lerLinhasPdf(file){
+  const lib=await carregarPdfJs();
+  const buf=await file.arrayBuffer();
+  const pdf=await lib.getDocument({data:buf}).promise;
+  const linhas=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p); const tc=await page.getTextContent();
+    let linha='';
+    for(const it of tc.items){ linha+=it.str+' '; if(it.hasEOL){ linhas.push(linha.trim()); linha=''; } }
+    if(linha.trim()) linhas.push(linha.trim());
+  }
+  return linhas;
+}
+function _valorBR(s){ return parseFloat(String(s).replace(/\./g,'').replace(',','.')); }
+function extrairQS(linhas){
+  const texto=linhas.join('\n');
+  const re=/R\$\s*([\d.]+,\d{2})/gi; let m; const valores=[];
+  while((m=re.exec(texto))){ valores.push({ v:_valorBR(m[1]), i:m.index }); }
+  let total=null;
+  const li=texto.toLowerCase().lastIndexOf('total');
+  if(li>=0){ const dep=valores.filter(x=>x.i>=li); if(dep.length) total=dep[dep.length-1].v; }
+  if(total==null && valores.length) total=Math.max(...valores.map(x=>x.v));
+  // materiais: heurística conservadora — linha "descrição ... <qtd> <un?>" sem ser cabeçalho/serviço/total.
+  const itens=[]; const pular=/(total|subtotal|desconto|valor|m[aã]o de obra|servi[cç]o|cliente|or[cç]amento|vendedor|data|cnpj|cpf|endere[cç]o|telefone|forma de|pagamento|p[aá]gina)/i;
+  for(const ln of linhas){
+    if(pular.test(ln)) continue;
+    const mm=ln.match(/^(.{4,}?)\s+(\d{1,4}(?:[.,]\d{1,3})?)\s*(un|u|pç|pc|pe[cç]a|peças|m|mt|metros?|kg|cx|cj|rl|par|jg)?\.?\s*$/i);
+    if(mm){ const prod=mm[1].replace(/\s{2,}/g,' ').trim(); const q=_valorBR(mm[2]); if(prod.length>=4 && q>0 && q<100000) itens.push({produto:prod, quantidade:q, unidade:(mm[3]||'').trim()||null}); }
+  }
+  return { total, itens };
+}
+
+/* ---------- formulário novo / editar orçamento ---------- */
+function orcItemRow(it){ return `<div class="item-row"><input class="oprod" placeholder="Material / produto" value="${esc(it?.produto||'')}">
+  <input class="oqtd" type="number" step="0.001" placeholder="qtd" value="${it?.quantidade??''}">
+  <input class="ouni" placeholder="un." value="${esc(it?.unidade||'')}">
+  <button type="button" class="x-row js-rm-o">×</button></div>`; }
+function ligarRemoverOrc(){ document.querySelectorAll('#form-orc .js-rm-o').forEach(b=>b.onclick=()=>b.parentElement.remove()); }
+
+function formOrc(o){
+  _qsFilePend=null;
+  const ed=!!o;
+  const itemRows=(o?.orcamento_itens||[]).sort((a,b)=>(a.ordem||0)-(b.ordem||0)).map(orcItemRow).join('') || orcItemRow(null);
+  const mostraEnvio = !ed || o.status==='orcar';
+  abrirModal(`<h2>${ed?'Editar orçamento':'Novo orçamento'}</h2>
+    <form id="form-orc"><div class="form-grid">
+      <label class="campo full">Cliente *<input name="cliente" required value="${esc(o?.cliente||'')}"></label>
+      <label class="campo">Origem do lead<input name="origem" placeholder="indicação / site / leads CBMSC…" value="${esc(o?.origem||'')}"></label>
+      <label class="campo">Responsável<input name="responsavel" value="${esc(o?.responsavel||state.perfil?.nome||'')}"></label>
+      <label class="campo">Contato (nome)<input name="contato_nome" value="${esc(o?.contato_nome||'')}"></label>
+      <label class="campo">Telefone / WhatsApp<input name="telefone" placeholder="(47) 9 9999-9999" value="${esc(o?.telefone||'')}"></label>
+      <label class="campo">Orçamento QS<input name="orcamento_qs" placeholder="OR930" value="${esc(o?.orcamento_qs||'')}"></label>
+      <label class="campo">Valor total (R$)<input type="number" step="0.01" name="valor_total" value="${o?.valor_total??''}"></label>
+      ${mostraEnvio?`<label class="campo" style="flex-direction:row;align-items:center;gap:8px;font-weight:600"><input type="checkbox" name="ja_enviado" style="width:auto"> Já enviei ao cliente (inicia o follow-up de 7 dias)</label>`:''}
+      <label class="campo full">Observações<textarea name="observacoes" rows="2">${esc(o?.observacoes||'')}</textarea></label>
+    </div>
+
+    <div class="det-sec"><h3>Quanto Sobra <small>— importa valor total e materiais de um PDF</small></h3>
+      <button type="button" class="btn btn-sec btn-sm" id="orc-import">📎 Importar do Quanto Sobra (PDF)</button>
+      <input type="file" id="orc-import-input" accept="application/pdf" class="hidden">
+      <div id="orc-import-msg" class="det-sub" style="margin-top:6px"></div></div>
+
+    <div class="det-sec"><h3>Materiais (viram a folha de obra quando ganhar)</h3><div id="orc-item-list">${itemRows}</div>
+      <button type="button" class="mini-add" id="orc-add-item">+ adicionar material</button></div>
+
+    <div class="form-acoes"><button type="button" class="btn btn-ghost" id="orc-cancela">Cancelar</button>
+      <button type="submit" class="btn btn-primary">${ed?'Salvar alterações':'Criar orçamento'}</button></div>
+    </form>`);
+
+  $('#orc-add-item').onclick=()=>{ const d=document.createElement('div'); d.innerHTML=orcItemRow(null); $('#orc-item-list').appendChild(d.firstElementChild); ligarRemoverOrc(); };
+  ligarRemoverOrc();
+  $('#orc-cancela').onclick=()=> o?abrirOrc(o.id):fecharModal();
+  $('#orc-import').onclick=()=>$('#orc-import-input').click();
+  $('#orc-import-input').onchange=async e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const msg=$('#orc-import-msg'); msg.textContent='Lendo PDF…';
+    try{
+      const linhas=await lerLinhasPdf(file);
+      const { total, itens }=extrairQS(linhas);
+      if(total!=null) $('#form-orc [name=valor_total]').value=total.toFixed(2);
+      if(itens.length){
+        $('#orc-item-list').innerHTML=itens.map(orcItemRow).join('');
+        ligarRemoverOrc();
+      }
+      _qsFilePend=file; // anexa após salvar
+      msg.innerHTML=`✓ ${total!=null?'Valor: '+moeda(total)+'. ':''}${itens.length?itens.length+' materiais (confira!).':'Não achei materiais — adicione manualmente.'} O PDF será anexado ao salvar.`;
+    }catch(err){ msg.textContent='Não consegui ler o PDF: '+err.message; }
+  };
+  $('#form-orc').onsubmit=e=>{ e.preventDefault(); salvarOrc(o); };
+}
+
+async function salvarOrc(o){
+  const f=$('#form-orc');
+  const cliente=f.cliente.value.trim(); if(!cliente){ toast('Informe o cliente.',true); return; }
+  const itens=[...document.querySelectorAll('#orc-item-list .item-row')].map((r,i)=>({
+    produto:r.querySelector('.oprod').value.trim(),
+    quantidade:+r.querySelector('.oqtd').value||0,
+    unidade:r.querySelector('.ouni').value.trim()||null, ordem:i })).filter(i=>i.produto);
+  const dados={ cliente, origem:f.origem.value.trim()||null, responsavel:f.responsavel.value.trim()||null,
+    contato_nome:f.contato_nome.value.trim()||null, telefone:f.telefone.value.trim()||null,
+    orcamento_qs:f.orcamento_qs.value.trim()||null,
+    valor_total:f.valor_total.value!==''?+f.valor_total.value:null,
+    observacoes:f.observacoes.value.trim()||null };
+
+  // controle de "já enviado" (só quando estava a orçar / é novo)
+  const jaEnviado = f.ja_enviado && f.ja_enviado.checked;
+  if(jaEnviado && (!o || o.status==='orcar')){
+    const agora=new Date(); const prox=new Date(agora); prox.setDate(prox.getDate()+ORC_INTERVALO);
+    dados.status='enviado'; dados.enviado_em=o?.enviado_em||agora.toISOString(); dados.proximo_followup=_iso(prox);
+  }
+  if(!o){ dados.criado_por_nome=state.perfil?.nome||state.user.email; }
+
+  let orcId=o?.id;
+  if(o){ const {error}=await sb.from('orcamentos').update(dados).eq('id',o.id); if(error){toast(error.message,true);return;} }
+  else { const {data,error}=await sb.from('orcamentos').insert(dados).select('id').single(); if(error){toast(error.message,true);return;} orcId=data.id; }
+
+  await sb.from('orcamento_itens').delete().eq('orcamento_id',orcId);
+  if(itens.length) await sb.from('orcamento_itens').insert(itens.map(i=>({...i, orcamento_id:orcId})));
+
+  if(_qsFilePend){ await uploadAnexoOrc({id:orcId}, _qsFilePend, 'quanto_sobra'); _qsFilePend=null; }
+  if(!o && jaEnviado) await contatoLog(orcId,'sistema','Orçamento cadastrado já como ENVIADO.');
+
+  await carregarTudo(true); toast(o?'Orçamento atualizado.':'Orçamento criado.'); abrirOrc(orcId);
 }
 
 /* ---------- start ---------- */

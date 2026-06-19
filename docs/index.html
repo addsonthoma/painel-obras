@@ -51,6 +51,7 @@
       <strong class="topbar-title">Portal Rodrigues</strong>
       <nav class="modulos" id="modulos">
         <button class="modulo ativa" data-mod="obras">🏗️ Obras</button>
+        <button class="modulo" data-mod="orcamentos">💲 Orçamentos</button>
         <button class="modulo" data-mod="leads">📍 Leads</button>
         <button class="modulo" data-mod="monitor">🛡️ Monitoramento</button>
       </nav>
@@ -132,6 +133,26 @@
         <div id="monitor-vazio" class="vazio hidden">Nenhum cliente monitorado ainda.</div>
       </div>
     </div>
+
+    <!-- ===================== MÓDULO ORÇAMENTOS (follow-up comercial) ===================== -->
+    <div id="mod-orcamentos" class="modulo-view hidden">
+      <nav class="abas" id="abas-orc">
+        <button class="aba ativa" data-abao="aberto">Em aberto <span class="badge-num" id="num-orc-aberto"></span></button>
+        <button class="aba" data-abao="ganho">Ganhos <span class="badge-num" id="num-orc-ganho"></span></button>
+        <button class="aba" data-abao="perdido">Perdidos <span class="badge-num" id="num-orc-perdido"></span></button>
+      </nav>
+      <main class="conteudo">
+        <div class="barra-acoes">
+          <div class="filtros" id="filtros-orc"></div>
+          <div class="barra-dir">
+            <input type="search" id="busca-orc" placeholder="Buscar cliente / origem / OR…" />
+            <button class="btn btn-primary" id="btn-novo-orc">+ Novo orçamento</button>
+          </div>
+        </div>
+        <div id="lista-orc" class="lista-obras"></div>
+        <div id="orc-vazio" class="vazio hidden">Nenhum orçamento por aqui ainda.</div>
+      </main>
+    </div><!-- /mod-orcamentos -->
   </div><!-- /app -->
 
   <!-- ================= MODAL GENÉRICO ================= -->
