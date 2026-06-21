@@ -222,6 +222,8 @@ code{background:#eef1f6; padding:1px 6px; border-radius:6px; font-size:.85em}
 .auto-row{border-top:1px solid var(--linha); padding:8px 0; font-size:.9rem}
 .auto-row.resolvido{opacity:.55}
 .auto-exig{color:var(--tinta-suave); font-size:.82rem; margin-top:3px}
+.re-autos{margin-top:8px; display:flex; flex-direction:column; gap:4px; border-top:1px dashed var(--linha); padding-top:7px}
+.re-auto-li{font-size:.82rem; color:var(--tinta-suave); line-height:1.4}
 
 /* ---- responsivo / TV ---- */
 @media (max-width:640px){

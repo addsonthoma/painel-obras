@@ -809,9 +809,13 @@ function renderMonitor(){
       const novos=autos.filter(a=>a.novo).length;
       const f=funcStatus(re), m=manutStatus(re);
       const alerta=autos.length?`<span class="status-badge st-pendente_material">🔴 ${autos.length} auto(s)${novos?' • '+novos+' novo(s)':''}</span>`:'';
+      const autosTxt=autos.length?`<div class="re-autos">${autos.map(a=>`<div class="re-auto-li">
+        <span class="chip-serv ${a.tipo==='MUL'?'SDAI':'MANUT_SHP'}">${esc(a.tipo)}</span> <b>${esc(a.codigo)}</b>${a.valor!=null?' · '+moeda(a.valor):''}
+        ${a.exigencia?'— '+esc(a.exigencia.length>90?a.exigencia.slice(0,90)+'…':a.exigencia):''}${a.prazo?' · <small>prazo '+esc(a.prazo)+'</small>':''}</div>`).join('')}</div>`:'';
       return `<div class="re-row" data-id="${re.id}">
         <div class="re-top"><b>${esc(re.re_codigo)}</b> <span class="re-nome">${esc(re.nome_edificacao||'(sem nome)')}</span> <small>${esc(re.cidade||'')}</small></div>
         <div class="re-badges"><span class="dias urg-${f.cls}">${f.txt}</span><span class="dias urg-${m.cls}">${m.txt}</span>${alerta}</div>
+        ${autosTxt}
       </div>`;
     }).join('') || '<div class="card-end" style="padding:6px 2px">Nenhuma RE cadastrada.</div>';
     return `<div class="cliente-mon">
