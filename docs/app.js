@@ -878,8 +878,12 @@ function abrirRE(id){
   html+= autos.length ? autos.map(a=>`<div class="auto-row${a.resolvido?' resolvido':''}">
       <span class="chip-serv ${a.tipo==='MUL'?'SDAI':'MANUT_SHP'}">${esc(a.tipo)}</span> <b>${esc(a.codigo)}</b> ${a.data?'· '+esc(a.data):''}
       ${a.novo&&!a.resolvido?'<span class="status-badge st-pendente_material">NOVO</span>':''} ${a.situacao?'· '+esc(a.situacao):''}
-      ${a.exigencia?'<div class="auto-exig">'+esc(a.exigencia)+'</div>':''}
-      ${state.isAdmin&&!a.resolvido?`<button class="btn btn-ok btn-sm js-resolver" data-id="${a.id}">Resolver</button>`:''}</div>`).join('')
+      ${a.valor!=null?'· <b>'+moeda(a.valor)+'</b>':''}
+      ${a.prazo?'<div class="auto-exig"><b>Prazo:</b> '+esc(a.prazo)+'</div>':''}
+      ${a.exigencia?'<div class="auto-exig"><b>Motivo:</b> '+esc(a.exigencia)+'</div>':''}
+      ${state.isAdmin?`<div class="acoes-status" style="margin-top:6px">
+        <button class="btn btn-sec btn-sm js-valor-auto" data-id="${a.id}" data-v="${a.valor??''}">💰 ${a.valor!=null?'Editar valor':'Valor da multa'}</button>
+        ${!a.resolvido?`<button class="btn btn-ok btn-sm js-resolver" data-id="${a.id}">Resolver</button>`:''}</div>`:''}</div>`).join('')
     : '<span class="card-end">Nenhum auto encontrado. O coletor checa o e-SCI a cada 2 dias.</span>';
   html+=`</div>`;
   if(re.ultima_verificacao) html+=`<p class="det-sub">Última checagem do e-SCI: ${new Date(re.ultima_verificacao).toLocaleString('pt-BR')}</p>`;
@@ -891,6 +895,15 @@ function abrirRE(id){
   $('#re-edit') && ($('#re-edit').onclick=()=>formRE(cli.id, re));
   $('#re-del') && ($('#re-del').onclick=async()=>{ if(!confirm('Excluir esta RE?'))return; await sb.from('monitor_res').delete().eq('id',re.id); await carregarMonitor(); fecharModal(); toast('RE excluída.'); });
   document.querySelectorAll('.js-resolver').forEach(b=>b.onclick=async()=>{ await sb.from('monitor_autos').update({resolvido:true,novo:false}).eq('id',b.dataset.id); await carregarMonitor(); abrirRE(re.id); toast('Auto resolvido.'); });
+  document.querySelectorAll('.js-valor-auto').forEach(b=>b.onclick=async()=>{
+    const v=prompt('Valor da multa (R$):', b.dataset.v||'');
+    if(v===null) return;
+    const val = v.trim()===''?null:_valorBR(v.replace(/[r$\s]/gi,''));
+    if(val!==null && isNaN(val)){ toast('Valor inválido.',true); return; }
+    const {error}=await sb.from('monitor_autos').update({valor:val}).eq('id',b.dataset.id);
+    if(error){ toast(error.message,true); return; }
+    await carregarMonitor(); abrirRE(re.id); toast('Valor salvo.');
+  });
 }
 
 /* =====================================================================

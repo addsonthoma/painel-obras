@@ -15,6 +15,7 @@ expirar, faça login no Chrome e rode de novo.
 Requer: pip install browser_cookie3 requests   (já instalados p/ o drill de leads)
 """
 import json, os, sys, time, urllib.request, urllib.error
+from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
 try:
     import browser_cookie3, requests
@@ -131,27 +132,58 @@ def coletar_re(s, re):
     edif = epost(s, EP_EDIF, {"numgEdificacao": numg})
     if edif == "EXPIRED": return "EXPIRED"
     blocos = (edif or {}).get("bloco") or []
-    autos, funcs = [], []
+    funcs = []
+    af_por_pai = {}     # numgPai -> {exigencia, situacao, prazo}  (motivo da fiscalização)
+    fiscal, multas, outros = [], [], []
     for bl in blocos:
         nb = bl.get("numgBloco")
         if not nb: continue
         d = epost(s, EP_BLOCO, {"numgBloco": nb, "numgAreaEspecifica": None, "numgEmpresa": None})
         if d == "EXPIRED": return "EXPIRED"
         if not isinstance(d, dict): continue
-        for _tp, lst in (d.get("autos") or {}).items():
+        for grupo, lst in (d.get("autos") or {}).items():
+            g = (grupo or "").upper()
             for au in (lst or []):
-                if au.get("codgAuto"): autos.append(au["codgAuto"])
-                for sub in (au.get("autos") or []):
-                    if sub.get("codgAuto"): autos.append(sub["codgAuto"])
+                if g.startswith("FISCAL"):   # Auto de Fiscalização: tem a EXIGÊNCIA (o motivo)
+                    cod = au.get("codgAuto")
+                    exigs, sits = [], []
+                    for p in (au.get("pendenciaObra") or []):
+                        desc = ((p.get("exigenciaObra") or {}).get("descExigenciaObra") or "").strip()
+                        if desc: exigs.append(desc)
+                        if p.get("mensagemStatus"): sits.append(p["mensagemStatus"].strip())
+                    info = {"exigencia": " | ".join(dict.fromkeys(exigs)) or None,
+                            "situacao":  " · ".join(dict.fromkeys(sits)) or None,
+                            "prazo": au.get("dataPrazo")}
+                    pai = (au.get("pai") or {}).get("numgPai")
+                    if pai is not None: af_por_pai[pai] = info
+                    if cod: fiscal.append((cod, info))
+                elif g.startswith("INFRAC"):  # Multa: nasce de um AF não cumprido (mesmo numgPai)
+                    pai = au.get("numgPai")
+                    for sub in (au.get("autos") or []):
+                        if sub.get("codgAuto"): multas.append((sub["codgAuto"], pai, sub.get("dataCriacao")))
+                else:                          # outros tipos: guarda só o código
+                    if au.get("codgAuto"): outros.append(au["codgAuto"])
+                    for sub in (au.get("autos") or []):
+                        if sub.get("codgAuto"): outros.append(sub["codgAuto"])
         funcs.extend(((d.get("processos") or {}).get("funcionamentos")) or [])
         time.sleep(0.3)
+    # monta dicionário  código -> detalhes
+    autos = {}
+    for cod, info in fiscal:
+        autos[cod] = {"tipo": "AF", "data": None, "situacao": info["situacao"],
+                      "exigencia": info["exigencia"], "prazo": info["prazo"]}
+    for cod, pai, datacri in multas:        # a multa herda o motivo/prazo da fiscalização vinculada
+        af = af_por_pai.get(pai) or {}
+        autos[cod] = {"tipo": "MUL", "data": datacri, "situacao": af.get("situacao") or "Multa aplicada",
+                      "exigencia": af.get("exigencia"), "prazo": af.get("prazo")}
+    for cod in outros:
+        autos.setdefault(cod, {"tipo": _tipo(cod), "data": None, "situacao": None, "exigencia": None, "prazo": None})
     # último funcionamento válido (deferido, não cassado/anulado), mais recente por emissão
     validos = [f for f in funcs if f.get("flagDeferido") and not f.get("flagCassado")
                and not f.get("flagAnulado") and _iso(f.get("dataProtocolo"))]
     validos.sort(key=lambda f: _iso(f.get("dataProtocolo")), reverse=True)
     f0 = validos[0] if validos else None
-    autos_u = sorted(set(autos))
-    return {"numg": numg, "autos": autos_u,
+    return {"numg": numg, "autos": autos,
             "func_emissao": _iso(f0.get("dataProtocolo")) if f0 else None,
             "func_validade": _iso(f0.get("dataValidade")) if f0 else None,
             **achado}
@@ -176,11 +208,15 @@ def main():
         ex = sb("GET", "monitor_autos?re_id=eq.%s&select=codigo" % re["id"]) or []
         cods = {x["codigo"] for x in ex}
         novos = 0
-        for cod in r["autos"]:
+        for cod, det in r["autos"].items():
+            campos = {"data": det.get("data"), "situacao": det.get("situacao"),
+                      "exigencia": det.get("exigencia"), "prazo": det.get("prazo")}
             if cod not in cods:
-                sb("POST", "monitor_autos", [{"re_id": re["id"], "tipo": _tipo(cod), "codigo": cod, "novo": True}],
-                   "resolution=ignore-duplicates")
+                sb("POST", "monitor_autos", [{"re_id": re["id"], "tipo": det.get("tipo") or _tipo(cod),
+                   "codigo": cod, "novo": True, **campos}], "resolution=ignore-duplicates")
                 novos += 1
+            else:  # já existe -> só preenche os detalhes (sem mexer em novo/resolvido)
+                sb("PATCH", "monitor_autos?re_id=eq.%s&codigo=eq.%s" % (re["id"], quote(cod, safe="")), campos)
         novos_total += novos
         upd = {"ultima_verificacao": agora}
         if r.get("func_emissao"):  upd["funcionamento_data"] = r["func_emissao"]
