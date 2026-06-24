@@ -232,8 +232,21 @@ function trocarModulo(mod){
   if(mod==='monitor') carregarMonitor();
   if(mod==='orcamentos') renderOrcamentos();
   if(mod==='renovacoes') renderRenovacoes();
+  const vw=document.getElementById('mod-'+mod);
+  if(vw){ vw.classList.remove('anim-in'); void vw.offsetWidth; vw.classList.add('anim-in'); }
 }
 $('#modulos').addEventListener('click', e=>{ const b=e.target.closest('.modulo'); if(b) trocarModulo(b.dataset.mod); });
+
+/* layout das listas (lista / cards / grade) — persiste em localStorage */
+function aplicarLayout(lay){
+  if(!['lista','cards','grade'].includes(lay)) lay='cards';
+  document.body.classList.remove('layout-lista','layout-cards','layout-grade');
+  document.body.classList.add('layout-'+lay);
+  try{ localStorage.setItem('painel_layout', lay); }catch(e){}
+  document.querySelectorAll('#layout-toggle button').forEach(b=>b.classList.toggle('ativa', b.dataset.lay===lay));
+}
+$('#layout-toggle') && $('#layout-toggle').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) aplicarLayout(b.dataset.lay); });
+aplicarLayout((()=>{ try{ return localStorage.getItem('painel_layout'); }catch(e){ return null; } })());
 
 /* =====================================================================
    NAVEGAÇÃO ENTRE ABAS
