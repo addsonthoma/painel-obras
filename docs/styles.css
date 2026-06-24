@@ -133,6 +133,28 @@ code{background:#eef1f6; padding:1px 6px; border-radius:6px; font-size:.85em}
 .btn-wa:hover{background:#1fae57}
 .btn-wa svg{width:16px; height:16px}
 
+/* ---- módulo Renovações (pós-venda) ---- */
+.renov-stats{display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px}
+.renov-card{background:var(--card); border-radius:12px; box-shadow:var(--sombra); padding:12px 14px; text-align:center}
+.renov-num{font-size:1.7rem; font-weight:800; line-height:1; color:var(--tinta)}
+.renov-num.rojo{color:var(--perigo)} .renov-num.ambar{color:var(--aviso)} .renov-num.azul{color:var(--info)}
+.renov-num.verde{color:var(--ok)} .renov-num.info{color:#2f6df0}
+.renov-lbl{font-size:.72rem; color:var(--tinta-suave); margin-top:5px}
+.filtros-renov{display:flex; gap:8px; flex-wrap:wrap; align-items:center; flex:1}
+.filtros-renov input, .filtros-renov select{padding:8px 10px; border:1px solid var(--linha); border-radius:9px; font-size:.9rem; background:#fff}
+.card-renov.renov-off{opacity:.55}
+.sis-pill{display:inline-block; font-size:.72rem; padding:2px 8px; border-radius:6px; background:#eef1f6; color:var(--tinta-suave); margin:2px 3px 0 0}
+.mini-select{padding:5px 8px; border:1px solid var(--linha); border-radius:8px; font-size:.82rem; background:#fff}
+.email-box{white-space:pre-wrap; font-family:inherit; font-size:.86rem; background:#f7f8fb; border:1px solid var(--linha);
+  border-radius:10px; padding:12px 14px; max-height:46vh; overflow:auto; line-height:1.5}
+.st-renov-nao{background:#fff3cd; color:#664d03}
+.st-renov-rasc{background:#cfe2ff; color:#084298}
+.st-renov-env{background:#d1ecf1; color:#0c5460}
+.st-renov-neg{background:#e2d9f3; color:#3d1a78}
+.st-renov-contr{background:#d1e7dd; color:#0a3622}
+.st-renov-inat{background:#e2e3e5; color:#41464b}
+@media (max-width:640px){ .renov-stats{grid-template-columns:repeat(3,1fr)} }
+
 /* ---- modal ---- */
 .modal-fundo{position:fixed; inset:0; background:rgba(15,18,28,.5); display:flex; align-items:flex-start;
   justify-content:center; padding:30px 16px; z-index:50; overflow:auto}

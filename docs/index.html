@@ -54,6 +54,7 @@
         <button class="modulo" data-mod="orcamentos">💲 Orçamentos</button>
         <button class="modulo" data-mod="leads">📍 Leads</button>
         <button class="modulo" data-mod="monitor">🛡️ Monitoramento</button>
+        <button class="modulo" data-mod="renovacoes">♻️ Renovações</button>
       </nav>
       <div class="topbar-user">
         <button class="btn btn-ghost" id="btn-ppci" title="Abrir o programa de Levantamento PPCI (instalado neste PC)" onclick="abrirPPCI()">📐 Levantamento PPCI</button>
@@ -154,6 +155,42 @@
         <div id="orc-vazio" class="vazio hidden">Nenhum orçamento por aqui ainda.</div>
       </main>
     </div><!-- /mod-orcamentos -->
+
+    <!-- ===================== MÓDULO RENOVAÇÕES (pós-venda) ===================== -->
+    <div id="mod-renovacoes" class="modulo-view hidden">
+      <div class="conteudo">
+        <div class="renov-stats" id="renov-stats"></div>
+        <div class="barra-acoes">
+          <div class="filtros-renov">
+            <input type="search" id="busca-renov" placeholder="Buscar cliente / cidade…" />
+            <select id="f-renov-dias">
+              <option value="">Todos os prazos</option>
+              <option value="7">Urgente (≤7d)</option>
+              <option value="30">Vencendo (≤30d)</option>
+              <option value="60">Próximo (≤60d)</option>
+              <option value="venc">Vencidos</option>
+            </select>
+            <select id="f-renov-status">
+              <option value="">Todos os status</option>
+              <option>Não contatado</option>
+              <option>Rascunho criado</option>
+              <option>Enviado</option>
+              <option>Em negociação</option>
+              <option>Contratado</option>
+              <option>Inativo</option>
+            </select>
+            <select id="f-renov-email">
+              <option value="">Com e sem e-mail</option>
+              <option value="sim">Com e-mail</option>
+              <option value="nao">Sem e-mail</option>
+            </select>
+          </div>
+          <div class="barra-dir"><button class="btn btn-primary" id="btn-novo-renov">+ Novo cliente</button></div>
+        </div>
+        <div id="lista-renov" class="lista-obras"></div>
+        <div id="renov-vazio" class="vazio hidden">Nenhum cliente de renovação ainda. Rode a migração + o migrador.</div>
+      </div>
+    </div><!-- /mod-renovacoes -->
   </div><!-- /app -->
 
   <!-- ================= MODAL GENÉRICO ================= -->

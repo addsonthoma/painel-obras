@@ -40,6 +40,7 @@ let sb = null;
 const state = {
   user:null, perfil:null, isAdmin:false, isComercial:false,
   obras:[], equipe:[], financeiro:{}, monitor:[], orcamentos:[], orcErro:null,
+  renovacoes:[], renovErro:null, buscaRenov:'', fRenovDias:'', fRenovStatus:'', fRenovEmail:'',
   modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
   abaOrc:'pendente', filtroOrc:'todos', buscaOrc:'',
   modalAberto:false,
@@ -146,7 +147,7 @@ async function aposLogin(user){
   // módulos visíveis por papel:
   //  admin     -> tudo  ·  comercial (vendedor) -> Orçamentos + Leads  ·  operação -> Obras
   let permitidos;
-  if(state.isAdmin) permitidos = ['obras','orcamentos','leads','monitor'];
+  if(state.isAdmin) permitidos = ['obras','orcamentos','leads','monitor','renovacoes'];
   else if(perfil?.vendedor) permitidos = ['orcamentos','leads'];
   else permitidos = ['obras'];
   document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('hidden', !permitidos.includes(b.dataset.mod)));
@@ -206,6 +207,12 @@ async function carregarTudo(silencioso){
     if(eo){ state.orcErro = eo.message; state.orcamentos = []; }
     else { state.orcErro = null; state.orcamentos = orc||[]; }
   }
+  if(state.isAdmin){
+    const { data:rv, error:er } = await sb.from('renovacoes')
+      .select('*').order('vencimento',{ascending:true, nullsFirst:false});
+    if(er){ state.renovErro = er.message; state.renovacoes = []; }
+    else { state.renovErro = null; state.renovacoes = rv||[]; }
+  }
   render();
 }
 
@@ -220,9 +227,11 @@ function trocarModulo(mod){
   document.getElementById('mod-orcamentos').classList.toggle('hidden', mod!=='orcamentos');
   document.getElementById('mod-leads').classList.toggle('hidden', mod!=='leads');
   document.getElementById('mod-monitor').classList.toggle('hidden', mod!=='monitor');
+  document.getElementById('mod-renovacoes').classList.toggle('hidden', mod!=='renovacoes');
   if(mod==='leads'){ const fr=document.getElementById('leads-frame'); if(!fr.getAttribute('src')) fr.src=LEADS_URL+'?v='+Date.now(); }
   if(mod==='monitor') carregarMonitor();
   if(mod==='orcamentos') renderOrcamentos();
+  if(mod==='renovacoes') renderRenovacoes();
 }
 $('#modulos').addEventListener('click', e=>{ const b=e.target.closest('.modulo'); if(b) trocarModulo(b.dataset.mod); });
 
@@ -244,7 +253,7 @@ $('#modal-fundo').addEventListener('click', e=>{ if(e.target.id==='modal-fundo')
 /* =====================================================================
    RENDER
    ===================================================================== */
-function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias(); if(state.isAdmin){ renderCobrancas(); renderEquipe(); } if(state.isComercial) renderOrcamentos(); }
+function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias(); if(state.isAdmin){ renderCobrancas(); renderEquipe(); renderRenovacoes(); } if(state.isComercial) renderOrcamentos(); }
 
 function renderContadores(){
   const pend = state.obras.filter(o=>o.status_execucao==='pendente_material').length;
@@ -1420,6 +1429,234 @@ async function salvarOrc(o){
   if(!o && jaEnviado) await contatoLog(orcId,'sistema','Orçamento cadastrado já como ENVIADO.');
 
   await carregarTudo(true); toast(o?'Orçamento atualizado.':'Orçamento criado.'); abrirOrc(orcId);
+}
+
+/* =====================================================================
+   MÓDULO RENOVAÇÕES (pós-venda) — máquina de renovações do Henrique
+   Clientes com obrigações que renovam (SHP anual, SDAI, extintores, SPDA, gás).
+   ===================================================================== */
+const RENOV_STATUS = {
+  'Não contatado':  'st-renov-nao',
+  'Rascunho criado':'st-renov-rasc',
+  'Enviado':        'st-renov-env',
+  'Em negociação':  'st-renov-neg',
+  'Contratado':     'st-renov-contr',
+  'Inativo':        'st-renov-inat',
+};
+const RENOV_STATUS_OPTS = Object.keys(RENOV_STATUS);
+const RENOV_SISTEMAS = ['Hidrantes (SHP)','Alarme/SDAI','Detectores/SDAI','Iluminação de Emergência',
+  'Extintores','SPDA','SPDA – Aterramento','Rede de Gás'];
+const MESES_RENOV = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+
+// Textos normativos por sistema (portados do app do Henrique) — base do e-mail de renovação
+const GRUPOS_EMAIL_RENOV = [
+  { ids:['Hidrantes (SHP)'], titulo:'Sistema Hidráulico Preventivo (SHP) — Rede de Hidrantes',
+    obrigacao:'O Art. 8º, §1º da Instrução Normativa 007/DAT/CBMSC exige a realização de manutenção anual do SHP, com emissão de Relatório Técnico (RT) assinado por Responsável Técnico habilitado e anotação de DRT junto ao CREA.',
+    servicos:'ART de manutenção com laudo técnico, laudo de comissionamento do sistema e laudo de vazão.' },
+  { ids:['Alarme/SDAI','Detectores/SDAI'], titulo:'Sistema de Detecção e Alarme de Incêndio (SDAI)',
+    obrigacao:'O Art. 13, §2º, inciso I da Instrução Normativa 007/DAT/CBMSC exige relatório anual do SDAI abrangendo detectores e central, com emissão de DRT junto ao CREA.',
+    servicos:'ART de manutenção com laudo técnico, laudo de comissionamento do sistema e laudo de sonoridade.' },
+  { ids:['Iluminação de Emergência'], titulo:'Sistema de Iluminação de Emergência',
+    obrigacao:'A Instrução Normativa 007/DAT/CBMSC exige verificação anual do sistema de iluminação de emergência, incluindo teste das baterias e blocos autônomos, com emissão de Relatório Técnico assinado por profissional habilitado.',
+    servicos:'ART de manutenção com laudo técnico e laudo de luminosidade (medição em lux nos pontos exigidos pela norma).' },
+  { ids:['Extintores'], titulo:'Extintores de Incêndio',
+    obrigacao:'A NBR 12962 exige recarga e/ou revisão anual dos extintores. Extintores com prazo vencido ou próximo do vencimento devem ser substituídos ou recarregados para manter a validade do CVCO junto ao CBMSC.',
+    servicos:'Fornecimento de extintores novos em substituição às unidades com prazo vencido ou a vencer. (Nota: recarga e manutenção de extintores não fazem parte do nosso escopo — recomendamos empresa especializada para esse procedimento.)' },
+  { ids:['SPDA','SPDA – Aterramento'], titulo:'Sistema de Proteção contra Descargas Atmosféricas (SPDA)',
+    obrigacao:'A ABNT NBR 5419 exige inspeção periódica do SPDA e do sistema de aterramento elétrico, com verificação do estado dos componentes, continuidade dos condutores e medição da resistência ôhmica, emitindo laudo técnico assinado por profissional habilitado.',
+    servicos:'ART de inspeção e laudo de resistência ôhmica (medição com terrômetro).' },
+  { ids:['Rede de Gás','Gás Canalizado'], titulo:'Rede de Gás Canalizado',
+    obrigacao:'A NBR 15526 (gás natural) e a NBR 13523 (GLP) exigem manutenção periódica das instalações de gás, com teste de estanqueidade e emissão de laudo técnico por profissional habilitado.',
+    servicos:'ART de manutenção com laudo técnico e laudo de estanqueidade da rede.' },
+];
+
+function diasAteRenov(v){ if(!v) return 999; const d=Math.round((new Date(v+'T00:00:00')-new Date().setHours(0,0,0,0))/86400000); return d; }
+function fmtDataLongoRenov(s){ if(!s) return '—'; const [y,m,d]=s.split('-'); return `${+d} de ${MESES_RENOV[+m-1]} de ${y}`; }
+function badgeDiasRenov(d, baixada){
+  if(baixada) return `<span class="dias urg-cinza">baixada</span>`;
+  if(d<0)  return `<span class="dias urg-vermelho">${Math.abs(d)}d atrasado</span>`;
+  if(d<=7) return `<span class="dias urg-vermelho">${d}d</span>`;
+  if(d<=30)return `<span class="dias urg-ambar">${d}d</span>`;
+  if(d<=60)return `<span class="dias urg-ambar">${d}d</span>`;
+  return `<span class="dias urg-verde">${d}d</span>`;
+}
+
+/* ---------- navegação / filtros ---------- */
+$('#busca-renov') && $('#busca-renov').addEventListener('input', e=>{ state.buscaRenov=e.target.value.toLowerCase(); renderListaRenov(); });
+$('#f-renov-dias') && $('#f-renov-dias').addEventListener('change', e=>{ state.fRenovDias=e.target.value; renderListaRenov(); });
+$('#f-renov-status') && $('#f-renov-status').addEventListener('change', e=>{ state.fRenovStatus=e.target.value; renderListaRenov(); });
+$('#f-renov-email') && $('#f-renov-email').addEventListener('change', e=>{ state.fRenovEmail=e.target.value; renderListaRenov(); });
+$('#btn-novo-renov') && $('#btn-novo-renov').addEventListener('click', ()=>formRenov(null));
+
+function renderRenovacoes(){ if(!$('#lista-renov')) return; statsRenov(); renderListaRenov(); }
+
+function statsRenov(){
+  const el=$('#renov-stats'); if(!el) return;
+  const at=state.renovacoes.filter(c=>!c.baixada);
+  const dd=c=>diasAteRenov(c.vencimento);
+  const s={
+    urgente: at.filter(c=>dd(c)>=0&&dd(c)<=7).length,
+    vencendo:at.filter(c=>dd(c)>=0&&dd(c)<=30).length,
+    total:   at.length,
+    email:   at.filter(c=>c.email).length,
+    contratado: at.filter(c=>c.status_contato==='Contratado').length,
+    pendente:at.filter(c=>c.status_contato==='Não contatado'&&c.email).length,
+  };
+  const card=(num,lbl,cls)=>`<div class="renov-card"><div class="renov-num ${cls||''}">${num}</div><div class="renov-lbl">${lbl}</div></div>`;
+  el.innerHTML = card(s.urgente,'urgente ≤7d','rojo')+card(s.vencendo,'vencendo ≤30d','ambar')+
+    card(s.total,'total monitorados','')+card(s.email,'com e-mail','azul')+
+    card(s.contratado,'contratados','verde')+card(s.pendente,'aguardando contato','info');
+}
+
+function renderListaRenov(){
+  const el=$('#lista-renov'), vazio=$('#renov-vazio'); if(!el) return;
+  if(state.renovErro){ el.innerHTML=`<div class="vazio">Módulo indisponível — rode <code>sql/migracao_renovacoes.sql</code> no Supabase.<br><small>${esc(state.renovErro)}</small></div>`; vazio.classList.add('hidden'); return; }
+  const q=state.buscaRenov, fd=state.fRenovDias, fs=state.fRenovStatus, fe=state.fRenovEmail;
+  let arr=state.renovacoes.filter(c=>{
+    const d=diasAteRenov(c.vencimento);
+    if(q && !(c.contratante||'').toLowerCase().includes(q) && !(c.cidade||'').toLowerCase().includes(q)) return false;
+    if(fd==='venc'){ if(!(d<0)) return false; } else if(fd && d>+fd) return false;
+    if(fs && c.status_contato!==fs) return false;
+    if(fe==='sim' && !c.email) return false;
+    if(fe==='nao' && c.email) return false;
+    return true;
+  });
+  el.innerHTML = arr.map(cardRenov).join('');
+  vazio.classList.toggle('hidden', arr.length>0 || !!state.renovErro);
+  el.querySelectorAll('.card-renov').forEach(card=>{
+    const id=card.dataset.id;
+    card.querySelector('.js-renov-status')?.addEventListener('change', e=>mudarStatusRenov(id, e.target.value));
+    card.querySelector('.js-renov-email')?.addEventListener('click', ()=>emailRenov(id));
+    card.querySelector('.js-renov-wa')?.addEventListener('click', ()=>emailRenov(id, true));
+    card.querySelector('.js-renov-edit')?.addEventListener('click', ()=>formRenov(state.renovacoes.find(x=>x.id===id)));
+  });
+}
+
+function cardRenov(c){
+  const d=diasAteRenov(c.vencimento);
+  const chips=(c.sistemas||[]).map(s=>`<span class="sis-pill">${esc(s)}</span>`).join('');
+  const stCls=RENOV_STATUS[c.status_contato]||'st-renov-nao';
+  const opts=RENOV_STATUS_OPTS.map(s=>`<option ${s===c.status_contato?'selected':''}>${s}</option>`).join('');
+  return `<div class="card-obra card-renov ${c.baixada||c.status_contato==='Inativo'?'renov-off':''}" data-id="${c.id}">
+    <div class="card-topo">
+      <div><div class="card-cliente">${esc(c.contratante)}</div>
+        ${c.cidade?`<div class="card-end">${esc(c.cidade)}</div>`:''}
+        <div class="card-prazo">⏱ ${badgeDiasRenov(d,c.baixada)} ${c.vencimento?`<small>vence ${dataBR(c.vencimento)}</small>`:'<small>sem vencimento</small>'}</div></div>
+      <span class="status-badge ${stCls}">${esc(c.status_contato)}</span>
+    </div>
+    ${chips?`<div class="servicos-chips">${chips}</div>`:''}
+    <div class="card-end" style="margin-top:4px">${c.email?'✉ '+esc(c.email):'<span style="opacity:.5">sem e-mail</span>'}${c.telefone?'  ·  📞 '+esc(c.telefone):''}</div>
+    <div class="card-rodape" style="gap:6px;flex-wrap:wrap;align-items:center">
+      <select class="js-renov-status mini-select">${opts}</select>
+      ${!c.baixada&&c.email?`<button class="btn btn-sec btn-sm js-renov-email">✉ E-mail</button>`:''}
+      ${!c.baixada&&c.telefone?`<button class="btn btn-wa btn-sm js-renov-wa">${WA_ICON} WhatsApp</button>`:''}
+      <button class="btn btn-ghost btn-sm js-renov-edit">✏️ Editar</button>
+    </div>
+  </div>`;
+}
+
+async function mudarStatusRenov(id, status){
+  const c=state.renovacoes.find(x=>x.id===id); if(!c) return;
+  let campos={status_contato:status};
+  let renovou=false;
+  if(status==='Contratado'){
+    // avança o vencimento 1 ano e volta p/ "Não contatado" (próximo ciclo)
+    let base=c.vencimento?new Date(c.vencimento+'T00:00:00'):new Date();
+    base.setFullYear(base.getFullYear()+1);
+    campos.vencimento=base.toISOString().slice(0,10);
+    campos.status_contato='Não contatado';
+    renovou=true;
+  }
+  const {error}=await sb.from('renovacoes').update(campos).eq('id',id);
+  if(error){ toast(error.message,true); return; }
+  await carregarTudo(true);
+  toast(renovou?'🎉 Contratado! Vencimento avançado +1 ano.':'Status: '+status);
+}
+
+function formRenov(c){
+  const ed=!!c; const sel=new Set(c?.sistemas||[]);
+  const sisChips=RENOV_SISTEMAS.map(s=>`<button type="button" class="pessoa-chip ${sel.has(s)?'sel':''}" data-s="${esc(s)}">${esc(s)}</button>`).join('');
+  const stOpts=RENOV_STATUS_OPTS.map(s=>`<option ${s===(c?.status_contato||'Não contatado')?'selected':''}>${s}</option>`).join('');
+  abrirModal(`<h2>${ed?'Editar cliente':'Novo cliente'}</h2>
+    <form id="form-renov"><div class="form-grid">
+      <label class="campo full">Contratante *<input name="contratante" required value="${esc(c?.contratante||'')}"></label>
+      <label class="campo">CNPJ / CPF<input name="cnpj_cpf" value="${esc(c?.cnpj_cpf||'')}"></label>
+      <label class="campo">Cidade<input name="cidade" value="${esc(c?.cidade||'')}"></label>
+      <label class="campo full">Endereço da obra<input name="endereco" value="${esc(c?.endereco||'')}"></label>
+      <label class="campo">E-mail<input type="email" name="email" value="${esc(c?.email||'')}"></label>
+      <label class="campo">Telefone<input name="telefone" value="${esc(c?.telefone||'')}"></label>
+      <label class="campo">Próximo vencimento<input type="date" name="vencimento" value="${c?.vencimento||''}"></label>
+      <label class="campo">Status<select name="status_contato">${stOpts}</select></label>
+      <label class="campo full">Observações<textarea name="observacoes" rows="2">${esc(c?.observacoes||'')}</textarea></label>
+      <label class="campo full" style="flex-direction:row;align-items:center;gap:8px;font-weight:600"><input type="checkbox" name="baixada" ${c?.baixada?'checked':''} style="width:auto"> Empresa baixada / inativa na Receita</label>
+    </div>
+    <div class="det-sec"><h3>Sistemas (obrigações que renovam)</h3><div class="equipe-pick" id="renov-sis">${sisChips}</div></div>
+    <div class="form-acoes">${ed?'<button type="button" class="btn btn-ghost" id="renov-del">Excluir</button>':''}
+      <button type="button" class="btn btn-ghost" id="renov-cancel">Cancelar</button>
+      <button type="submit" class="btn btn-primary">${ed?'Salvar':'Criar'}</button></div></form>`);
+  $('#renov-sis').querySelectorAll('.pessoa-chip').forEach(b=>b.onclick=()=>b.classList.toggle('sel'));
+  $('#renov-cancel').onclick=fecharModal;
+  $('#renov-del') && ($('#renov-del').onclick=()=>excluirRenov(c));
+  $('#form-renov').onsubmit=e=>{ e.preventDefault(); salvarRenov(c); };
+}
+
+async function salvarRenov(c){
+  const f=$('#form-renov');
+  const contratante=f.contratante.value.trim(); if(!contratante){ toast('Informe o contratante.',true); return; }
+  const sistemas=[...$('#renov-sis').querySelectorAll('.sel')].map(b=>b.dataset.s);
+  const dados={ contratante, cnpj_cpf:f.cnpj_cpf.value.trim()||null, cidade:f.cidade.value.trim()||null,
+    endereco:f.endereco.value.trim()||null, email:f.email.value.trim()||null, telefone:f.telefone.value.trim()||null,
+    vencimento:f.vencimento.value||null, status_contato:f.status_contato.value, sistemas,
+    observacoes:f.observacoes.value.trim()||'', baixada:f.baixada.checked };
+  const {error}= c ? await sb.from('renovacoes').update(dados).eq('id',c.id) : await sb.from('renovacoes').insert(dados);
+  if(error){ toast(error.message,true); return; }
+  fecharModal(); await carregarTudo(true); toast(c?'Cliente atualizado.':'Cliente adicionado.');
+}
+async function excluirRenov(c){
+  if(!confirm(`Excluir "${c.contratante}" das renovações?`)) return;
+  const {error}=await sb.from('renovacoes').delete().eq('id',c.id);
+  if(error){ toast(error.message,true); return; }
+  fecharModal(); await carregarTudo(true); toast('Cliente excluído.');
+}
+
+/* ---------- gerador de e-mail / WhatsApp (portado do app do Henrique) ---------- */
+function gerarAssuntoRenov(nome){
+  const stop=new Set(['de','do','da','dos','das','e','ltda','me','eireli','s/a','sa','epp','ltd']);
+  const palavras=(nome||'').split(/\s+/).filter(w=>w && !stop.has(w.toLowerCase()))
+    .map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase());
+  return 'Renovação de Laudos e ARTs – '+palavras.slice(0,3).join(' ');
+}
+function foneWaRenov(tel){ const dig=soDigitos((tel||'').split('/')[0]); return (dig.length===10||dig.length===11)?'55'+dig:null; }
+function gerarCorpoEmailRenov(c){
+  const sis=new Set(c.sistemas||[]);
+  const venc=fmtDataLongoRenov(c.vencimento||'');
+  const localPartes=[c.endereco,c.cidade].filter(Boolean).join(', ');
+  const local=localPartes?`, localizada em ${localPartes}`:'';
+  let blocos=[];
+  for(const g of GRUPOS_EMAIL_RENOV){ if(g.ids.some(id=>sis.has(id)))
+    blocos.push(`>> ${g.titulo}\n  Obrigação: ${g.obrigacao}\n  O que podemos emitir/fornecer: ${g.servicos}`); }
+  if(!blocos.length) blocos=['  (sistemas a confirmar — favor desconsiderar se já regularizados)'];
+  return `Prezado(a),\n\nConforme nosso histórico de serviços, identificamos que a edificação${local} possui obrigações de renovação com vencimento previsto para ${venc}. Seguem os detalhes por sistema:\n\n${blocos.join('\n\n')}\n\nPara manter o Certificado de Vistoria do Corpo de Bombeiros (CVCO) em dia e evitar autuações do CBMSC, os documentos acima precisam ser emitidos dentro do prazo.\n\nPodemos agendar os serviços com antecedência — fico à disposição para qualquer dúvida ou para confirmarmos uma data.\n\nAtenciosamente,\nRodrigues Preventivos Ltda\n(47) 98821-3395 | henrique@rodriguespreventivos.com.br`;
+}
+function emailRenov(id, focoWa){
+  const c=state.renovacoes.find(x=>x.id===id); if(!c) return;
+  const assunto=gerarAssuntoRenov(c.contratante);
+  const corpo=gerarCorpoEmailRenov(c);
+  const wa=foneWaRenov(c.telefone);
+  const gmail=`https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(c.email||'')}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+  const waUrl=wa?`https://wa.me/${wa}?text=${encodeURIComponent(corpo)}`:null;
+  abrirModal(`<h2>Renovação — ${esc(c.contratante)}</h2>
+    <div class="det-sub">${c.email?'Para: <b>'+esc(c.email)+'</b>':'<span style="color:var(--perigo)">sem e-mail cadastrado</span>'} · Assunto: ${esc(assunto)}</div>
+    <pre class="email-box">${esc(corpo)}</pre>
+    <div class="form-acoes" style="flex-wrap:wrap">
+      <button class="btn btn-ghost" id="re-copy">📋 Copiar texto</button>
+      ${c.email?`<a class="btn btn-sec" href="${gmail}" target="_blank" rel="noopener">✉ Abrir no Gmail</a>`:''}
+      ${waUrl?`<a class="btn btn-wa" href="${waUrl}" target="_blank" rel="noopener">${WA_ICON} WhatsApp</a>`:''}
+      <button class="btn btn-primary" id="re-enviado">✓ Marcar enviado</button>
+    </div>`);
+  $('#re-copy').onclick=()=>{ try{ navigator.clipboard.writeText(corpo); toast('Texto copiado!'); }catch(e){ toast('Copie manualmente.',true); } };
+  $('#re-enviado').onclick=async()=>{ await sb.from('renovacoes').update({status_contato:'Enviado'}).eq('id',id); fecharModal(); await carregarTudo(true); toast('Marcado como enviado.'); };
+  if(focoWa && waUrl) setTimeout(()=>{ try{ window.open(waUrl,'_blank'); }catch(e){} }, 50);
 }
 
 /* ---------- start ---------- */
