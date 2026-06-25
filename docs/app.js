@@ -656,6 +656,7 @@ function imprimirMateriais(id){
 $('#btn-nova-obra').addEventListener('click', ()=>formObra(null));
 
 function formObra(o){
+  _qsObraFiles=[];
   const ed=!!o; const fin = o?state.financeiro[o.id]:null;
   const servOpts=Object.entries(SERVICOS).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
   const servRows=(o?.obra_servicos||[]).map(s=>servRow(s,servOpts)).join('') || servRow(null,servOpts);
@@ -676,6 +677,11 @@ function formObra(o){
       <label class="campo full">Observações<textarea name="observacoes" rows="2">${esc(o?.observacoes||'')}</textarea></label>
     </div>
 
+    <div class="det-sec"><h3>Quanto Sobra <small>— importe 1 ou vários PDFs (SHP + SDAI + SPDA) numa obra só</small></h3>
+      <button type="button" class="btn btn-sec btn-sm" id="obra-import">📎 Importar do Quanto Sobra (PDF)</button>
+      <input type="file" id="obra-import-input" accept="application/pdf" multiple class="hidden">
+      <div id="obra-import-msg" class="det-sub" style="margin-top:6px"></div></div>
+
     <div class="det-sec"><h3>Serviços (dias × pessoas)</h3><div id="serv-list">${servRows}</div>
       <button type="button" class="mini-add" id="add-serv">+ adicionar serviço</button></div>
 
@@ -693,6 +699,32 @@ function formObra(o){
   $('#add-serv').onclick=()=>{ const d=document.createElement('div'); d.innerHTML=servRow(null,servOpts); $('#serv-list').appendChild(d.firstElementChild); ligarRemover(); };
   $('#add-item').onclick=()=>{ const d=document.createElement('div'); d.innerHTML=itemRow(null); $('#item-list').appendChild(d.firstElementChild); ligarRemover(); };
   ligarRemover();
+  $('#obra-import').onclick=()=>$('#obra-import-input').click();
+  $('#obra-import-input').onchange=async e=>{
+    const files=[...e.target.files]; if(!files.length) return;
+    const msg=$('#obra-import-msg'); msg.textContent=`Lendo ${files.length} PDF(s)…`;
+    try{
+      const qs=await importarQSmulti(files);
+      const ff=$('#form-obra');
+      if(qs.cliente) ff.cliente.value=qs.cliente;
+      if(qs.orcamento_qs) ff.orcamento_qs.value=qs.orcamento_qs;
+      if(qs.total!=null) ff.valor_total.value=qs.total.toFixed(2);
+      if(qs.temSkid) ff.tem_skid.checked=true;
+      if(qs.servicos.length) $('#serv-list').innerHTML=qs.servicos.map(s=>servRow({servico:s},servOpts)).join('');
+      if(qs.itens.length) $('#item-list').innerHTML=qs.itens.map(itemRow).join('');
+      ligarRemover();
+      _qsObraFiles=files; // anexa ao salvar
+      const sug=sugerirEquipe(qs.servicos, qs.temSkid);  // já sugere a equipe pelos serviços
+      const set=new Set(sug.equipe); $('#eq-pick').querySelectorAll('.pessoa-chip').forEach(c=>c.classList.toggle('sel',set.has(c.dataset.n)));
+      const partes=[];
+      if(qs.cliente) partes.push('Cliente: <b>'+esc(qs.cliente)+'</b>');
+      if(qs.orcamento_qs) partes.push(esc(qs.orcamento_qs));
+      if(qs.total!=null) partes.push('Valor '+moeda(qs.total));
+      partes.push('serviços: <b>'+qs.servicos.map(s=>SERVICOS[s]?.label||s).join(', ')+'</b>');
+      partes.push('<b>'+qs.itens.length+'</b> materiais');
+      msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Confira os dias×pessoas. PDF(s) anexados ao salvar.';
+    }catch(err){ msg.textContent='Não consegui ler o PDF: '+err.message; }
+  };
   $('#eq-pick').querySelectorAll('.pessoa-chip').forEach(c=>c.onclick=()=>c.classList.toggle('sel'));
   $('#btn-sugerir').onclick=()=>{ const {servicos,temSkid}=lerServicos(); const sug=sugerirEquipe(servicos,temSkid);
     const set=new Set(sug.equipe); $('#eq-pick').querySelectorAll('.pessoa-chip').forEach(c=>c.classList.toggle('sel',set.has(c.dataset.n)));
@@ -743,6 +775,9 @@ async function salvarObra(o){
   // financeiro (valor) — preserva status de cobrança existente
   const finAtual=state.financeiro[obraId];
   await sb.from('obra_financeiro').upsert({ obra_id:obraId, valor_total:valor, status_cobranca:finAtual?.status_cobranca||'nao_aplicavel' });
+
+  // anexa os PDFs do Quanto Sobra importados (se houver)
+  if(_qsObraFiles && _qsObraFiles.length){ for(const file of _qsObraFiles){ await uploadAnexo({id:obraId}, file); } _qsObraFiles=[]; }
 
   await logar(obraId, o?'edição':'criação', o?'Editou a obra':'Cadastrou a obra');
   await carregarTudo(true); toast(o?'Obra atualizada.':'Obra criada.'); abrirObra(obraId);
@@ -1286,7 +1321,8 @@ async function excluirAnexoOrc(orcId, id, path){
 }
 
 /* ---------- import do Quanto Sobra (PDF -> valor total + materiais) ---------- */
-let _qsFilePend=null;  // arquivo importado, anexado após salvar
+let _qsFilePend=[];    // PDFs importados no orçamento, anexados após salvar
+let _qsObraFiles=[];   // PDFs importados na obra, anexados após salvar
 function carregarPdfJs(){
   if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
   return new Promise((res,rej)=>{
@@ -1346,6 +1382,41 @@ function extrairQS(linhas){
   return out;
 }
 
+/* ---------- detecção de serviço (pistas por nome de item — portado do importar_qs.py) ---------- */
+const PISTAS_QS = {
+  SHP:   ['hidrante','mangueira','mangotinho','ranhurado','tubo aço','tubo aco','tubo carbono','tubo galv','registro','esguicho','storz','niple','flange','valvula gaveta','válvula gaveta','skid','abrigo de mangueira','tubulaç','tubulac','valvula retenção','valvula retencao','joelho galv','cotovelo galv'],
+  SDAI:  ['central alarme','central de alarme','detector','acionador','sirene','audio visual','áudio visual','endereç','enderec','cabo blindado','fonte auxiliar','módulo de endere','modulo de endere','avisador','módulo de comunica','modulo de comunica','bateria 12v'],
+  VITAIS:['bloco nano','bloco 3000','bloco autôn','bloco auton','iluminação de emerg','iluminacao de emerg','placa de saída','placa de saida','placa extintor','suporte de parede para extintor','extintor','demarcação de piso','placa letra'],
+  SPDA:  ['cobre nu','haste de aterr','captor','franklin','mastro','para-raio','para raio'],
+  GLP:   ['regulador','abrigo de gás','abrigo de gas','tubo cobre','válvula gás','valvula gas'],
+};
+function detectarServicosQS(itens){
+  const txt=itens.map(i=>(i.produto||'').toLowerCase()).join(' | ');
+  const achados=Object.entries(PISTAS_QS).filter(([s,ks])=>ks.some(k=>txt.includes(k))).map(([s])=>s);
+  return achados.length?achados:['SHP'];
+}
+function detectarSkidQS(itens){ return itens.some(i=>(i.produto||'').toLowerCase().includes('skid')); }
+
+/* lê 1+ PDFs do Quanto Sobra e MESCLA: soma valores, junta materiais (somando
+   quantidades de itens iguais), une os serviços detectados. Ex.: SHP+SDAI+SPDA numa obra. */
+async function importarQSmulti(files){
+  let cliente=null; const ors=[]; let total=0, temTotal=false; const mapa=new Map();
+  for(const f of files){
+    const qs=extrairQS(await lerLinhasPdf(f));
+    if(!cliente && qs.cliente) cliente=qs.cliente;
+    if(qs.orcamento_qs && !ors.includes(qs.orcamento_qs)) ors.push(qs.orcamento_qs);
+    if(qs.total!=null){ total+=qs.total; temTotal=true; }
+    for(const it of qs.itens){
+      const chave=(it.produto||'').toLowerCase().replace(/\s+/g,' ').trim(); if(!chave) continue;
+      if(mapa.has(chave)) mapa.get(chave).quantidade+=(+it.quantidade||0);
+      else mapa.set(chave, {produto:it.produto, quantidade:+it.quantidade||0, unidade:it.unidade||null});
+    }
+  }
+  const itens=[...mapa.values()];
+  return { cliente, orcamento_qs:ors.join(' + ')||null, total:temTotal?total:null, itens,
+    servicos:detectarServicosQS(itens), temSkid:detectarSkidQS(itens), nFiles:files.length };
+}
+
 /* ---------- formulário novo / editar orçamento ---------- */
 function orcItemRow(it){ return `<div class="item-row"><input class="oprod" placeholder="Material / produto" value="${esc(it?.produto||'')}">
   <input class="oqtd" type="number" step="0.001" placeholder="qtd" value="${it?.quantidade??''}">
@@ -1354,7 +1425,7 @@ function orcItemRow(it){ return `<div class="item-row"><input class="oprod" plac
 function ligarRemoverOrc(){ document.querySelectorAll('#form-orc .js-rm-o').forEach(b=>b.onclick=()=>b.parentElement.remove()); }
 
 function formOrc(o){
-  _qsFilePend=null;
+  _qsFilePend=[];
   const ed=!!o;
   const itemRows=(o?.orcamento_itens||[]).sort((a,b)=>(a.ordem||0)-(b.ordem||0)).map(orcItemRow).join('') || orcItemRow(null);
   const mostraEnvio = !ed || o.status==='orcar';
@@ -1371,9 +1442,9 @@ function formOrc(o){
       <label class="campo full">Observações<textarea name="observacoes" rows="2">${esc(o?.observacoes||'')}</textarea></label>
     </div>
 
-    <div class="det-sec"><h3>Quanto Sobra <small>— importa valor total e materiais de um PDF</small></h3>
+    <div class="det-sec"><h3>Quanto Sobra <small>— importe 1 ou vários PDFs (soma valores e junta materiais)</small></h3>
       <button type="button" class="btn btn-sec btn-sm" id="orc-import">📎 Importar do Quanto Sobra (PDF)</button>
-      <input type="file" id="orc-import-input" accept="application/pdf" class="hidden">
+      <input type="file" id="orc-import-input" accept="application/pdf" multiple class="hidden">
       <div id="orc-import-msg" class="det-sub" style="margin-top:6px"></div></div>
 
     <div class="det-sec"><h3>Materiais (viram a folha de obra quando ganhar)</h3><div id="orc-item-list">${itemRows}</div>
@@ -1388,23 +1459,22 @@ function formOrc(o){
   $('#orc-cancela').onclick=()=> o?abrirOrc(o.id):fecharModal();
   $('#orc-import').onclick=()=>$('#orc-import-input').click();
   $('#orc-import-input').onchange=async e=>{
-    const file=e.target.files[0]; if(!file) return;
-    const msg=$('#orc-import-msg'); msg.textContent='Lendo PDF…';
+    const files=[...e.target.files]; if(!files.length) return;
+    const msg=$('#orc-import-msg'); msg.textContent=`Lendo ${files.length} PDF(s)…`;
     try{
-      const linhas=await lerLinhasPdf(file);
-      const qs=extrairQS(linhas);
+      const qs=await importarQSmulti(files);
       const ff=$('#form-orc');
       if(qs.cliente) ff.cliente.value=qs.cliente;
       if(qs.orcamento_qs) ff.orcamento_qs.value=qs.orcamento_qs;
       if(qs.total!=null) ff.valor_total.value=qs.total.toFixed(2);
       if(qs.itens.length){ $('#orc-item-list').innerHTML=qs.itens.map(orcItemRow).join(''); ligarRemoverOrc(); }
-      _qsFilePend=file; // anexa após salvar
+      _qsFilePend=files; // anexa após salvar
       const partes=[];
       if(qs.cliente) partes.push('Cliente: <b>'+esc(qs.cliente)+'</b>');
       if(qs.orcamento_qs) partes.push(esc(qs.orcamento_qs));
       if(qs.total!=null) partes.push('Valor '+moeda(qs.total));
       partes.push(qs.itens.length?('<b>'+qs.itens.length+'</b> materiais (confira!)'):'sem materiais — adicione à mão');
-      msg.innerHTML='✓ '+partes.join(' · ')+'. O PDF será anexado ao salvar.';
+      msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Anexo(s) ao salvar.';
     }catch(err){ msg.textContent='Não consegui ler o PDF: '+err.message; }
   };
   $('#form-orc').onsubmit=e=>{ e.preventDefault(); salvarOrc(o); };
@@ -1438,7 +1508,7 @@ async function salvarOrc(o){
   await sb.from('orcamento_itens').delete().eq('orcamento_id',orcId);
   if(itens.length) await sb.from('orcamento_itens').insert(itens.map(i=>({...i, orcamento_id:orcId})));
 
-  if(_qsFilePend){ await uploadAnexoOrc({id:orcId}, _qsFilePend, 'quanto_sobra'); _qsFilePend=null; }
+  for(const file of (_qsFilePend||[])){ await uploadAnexoOrc({id:orcId}, file, 'quanto_sobra'); } _qsFilePend=[];
   if(!o && jaEnviado) await contatoLog(orcId,'sistema','Orçamento cadastrado já como ENVIADO.');
 
   await carregarTudo(true); toast(o?'Orçamento atualizado.':'Orçamento criado.'); abrirOrc(orcId);
