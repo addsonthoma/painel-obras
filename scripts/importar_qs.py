@@ -49,6 +49,7 @@ def req(metodo, caminho, corpo=None, prefer=None):
         sys.exit("ERRO %s em %s %s: %s" % (e.code, metodo, caminho, e.read().decode("utf-8")))
 
 # ---- detecção do tipo de serviço pelos nomes dos itens + observação ----
+# ⚠ manter em SINCRONIA com PISTAS_QS em docs/app.js (o import por PDF usa a mesma lista)
 PISTAS = {
     "SHP":    ["hidrante", "mangueira", "mangotinho", "ranhurado", "tubo aço", "tubo aco",
                "tubo carbono", "tubo galv", "registro", "esguicho", "storz", "niple", "flange",
@@ -56,7 +57,8 @@ PISTAS = {
                "valvula retenção", "valvula retencao", "joelho galv", "cotovelo galv"],
     "SDAI":   ["central alarme", "central de alarme", "detector", "acionador", "sirene",
                "audio visual", "áudio visual", "endereç", "enderec", "cabo blindado",
-               "fonte auxiliar", "módulo de endere", "modulo de endere", "avisador"],
+               "fonte auxiliar", "módulo de endere", "modulo de endere", "avisador",
+               "módulo de comunica", "modulo de comunica", "bateria 12v"],
     "VITAIS": ["bloco nano", "bloco 3000", "bloco autôn", "bloco auton", "iluminação de emerg",
                "iluminacao de emerg", "placa de saída", "placa de saida", "placa extintor",
                "suporte de parede para extintor", "extintor", "demarcação de piso", "placa letra"],

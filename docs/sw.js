@@ -2,10 +2,11 @@
    Estratégia: network-first para os arquivos do próprio app (sempre pega a
    versão mais nova quando online; cai no cache só offline). NÃO intercepta
    Supabase nem CDNs — esses vão direto pra rede. */
-const CACHE = 'painel-obras-v2';
+const CACHE = 'painel-obras-v3';
 const CORE = [
   './', './index.html', './app.js', './styles.css', './config.js',
-  './manifest.json', './assets/icon-192.png', './assets/icon-512.png'
+  './manifest.json', './assets/icon-192.png', './assets/icon-512.png',
+  './assets/logo.png', './assets/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (e) => {
@@ -33,6 +34,11 @@ self.addEventListener('fetch', (e) => {
         caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         return res;
       })
-      .catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
+      .catch(() => caches.match(req).then((r) => {
+        if (r) return r;
+        // index.html só serve de fallback para NAVEGAÇÃO (senão imagem vira HTML)
+        if (req.mode === 'navigate') return caches.match('./index.html');
+        return Response.error();
+      }))
   );
 });

@@ -31,7 +31,15 @@ guio clique a clique ou faço a parte de código/`git` por você.
 ## Passo 3 — Criar o banco
 1. No Supabase: **SQL Editor** → **New query**.
 2. Abra o arquivo `sql/setup.sql`, **copie tudo**, cole e clique **Run**.
-3. Deve aparecer *Success*. (Pode rodar de novo sem problema — é idempotente.)
+3. Deve aparecer *Success*. (Pode rodar de novo sem problema — o seed da equipe
+   só entra se a tabela estiver vazia; nada é apagado.)
+4. Rode as **migrações** (cada uma numa query nova, nesta ordem — todas idempotentes):
+   1. `sql/migracao_anexos_obs.sql` — observações + anexos de obra
+   2. `sql/migracao_monitoramento.sql` — módulo Monitoramento (e-SCI)
+   3. `sql/migracao_auto_valor.sql` — valor da multa + validade do funcionamento
+   4. `sql/migracao_orcamentos.sql` — módulo Orçamentos (comercial)
+   5. `sql/migracao_renovacoes.sql` — módulo Renovações (pós-venda)
+   6. `sql/migracao_privacidade.sql` — anexos restritos + leitura por papel
 
 ## Passo 4 — Criar os logins e marcar os admins
 1. **Authentication** → **Users** → **Add user** → **Create new user**.

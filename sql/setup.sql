@@ -5,7 +5,9 @@
 --  COMO USAR:
 --  1. No painel do Supabase, abra  SQL Editor  ->  New query
 --  2. Cole este arquivo INTEIRO e clique RUN.
---  3. Rode só uma vez. Pode rodar de novo sem quebrar (é idempotente).
+--  3. Rode só uma vez. Pode rodar de novo sem quebrar (idempotente): o seed
+--     da equipe SÓ entra se a tabela estiver vazia (não apaga edições).
+--  4. Depois rode as migrações de sql/ na ordem (ver SETUP.md).
 --
 --  Segurança em uma frase:
 --  - Tudo que é DINHEIRO mora na tabela  obra_financeiro  e só ADMIN lê.
@@ -24,6 +26,8 @@ create table if not exists public.perfis (
   papel     text not null default 'operacao' check (papel in ('admin','operacao')),
   criado_em timestamptz not null default now()
 );
+-- "vendedor" identifica o comercial (Aline/Banana/Guilherme/Addson/Henrique)
+alter table public.perfis add column if not exists vendedor text;
 
 -- Cria o perfil automaticamente quando um usuário novo é criado no Auth.
 create or replace function public.handle_new_user()
@@ -48,6 +52,27 @@ language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.perfis
     where id = auth.uid() and papel = 'admin'
+  );
+$$;
+
+-- Helper: é do COMERCIAL? (admin, ou perfil com "vendedor" preenchido)
+create or replace function public.is_comercial()
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.perfis
+    where id = auth.uid() and (papel = 'admin' or vendedor is not null)
+  );
+$$;
+
+-- Helper: pode ver o módulo OBRAS? (admin, ou operação SEM vendedor —
+-- vendedor "puro" usa Orçamentos/Leads e não lê as tabelas de obras)
+create or replace function public.pode_ver_obras()
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.perfis
+    where id = auth.uid() and (papel = 'admin' or vendedor is null)
   );
 $$;
 
@@ -117,10 +142,10 @@ create table if not exists public.obra_financeiro (
   valor_total         numeric(12,2),
   status_cobranca     text not null default 'nao_aplicavel'
                       check (status_cobranca in ('nao_aplicavel','a_cobrar','cobranca_enviada','pago')),
-  valor_cobrado       numeric(12,2),
+  valor_cobrado       numeric(12,2),   -- RESERVADO: ainda sem tela p/ editar (app usa valor_total)
   cobranca_enviada_em timestamptz,
   pago_em             timestamptz,
-  cobranca_obs        text,
+  cobranca_obs        text,            -- RESERVADO: ainda sem tela p/ editar
   atualizado_em       timestamptz not null default now()
 );
 
@@ -153,7 +178,7 @@ create table if not exists public.obra_itens (
   produto    text not null,
   quantidade numeric(12,3) not null default 1,
   unidade    text,
-  servico    text,
+  servico    text,           -- RESERVADO: nenhum fluxo preenche hoje (agrupamento futuro)
   ordem      int default 0
 );
 create index if not exists idx_obra_itens_obra on public.obra_itens(obra_id);
@@ -199,9 +224,9 @@ drop policy if exists equipe_adm on public.equipe;
 create policy equipe_adm on public.equipe for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
--- OBRAS: todo logado lê; só admin cria/edita/apaga.
+-- OBRAS: lê quem pode ver o módulo Obras (admin + operação sem vendedor); só admin altera.
 drop policy if exists obras_sel on public.obras;
-create policy obras_sel on public.obras for select to authenticated using (true);
+create policy obras_sel on public.obras for select to authenticated using (public.pode_ver_obras());
 drop policy if exists obras_adm on public.obras;
 create policy obras_adm on public.obras for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
@@ -211,21 +236,21 @@ drop policy if exists fin_adm on public.obra_financeiro;
 create policy fin_adm on public.obra_financeiro for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
--- SERVIÇOS / ITENS / LOG: todo logado lê; só admin altera.
+-- SERVIÇOS / ITENS / LOG: lê quem pode ver Obras; só admin altera.
 drop policy if exists serv_sel on public.obra_servicos;
-create policy serv_sel on public.obra_servicos for select to authenticated using (true);
+create policy serv_sel on public.obra_servicos for select to authenticated using (public.pode_ver_obras());
 drop policy if exists serv_adm on public.obra_servicos;
 create policy serv_adm on public.obra_servicos for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists itens_sel on public.obra_itens;
-create policy itens_sel on public.obra_itens for select to authenticated using (true);
+create policy itens_sel on public.obra_itens for select to authenticated using (public.pode_ver_obras());
 drop policy if exists itens_adm on public.obra_itens;
 create policy itens_adm on public.obra_itens for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists log_sel on public.obra_log;
-create policy log_sel on public.obra_log for select to authenticated using (true);
+create policy log_sel on public.obra_log for select to authenticated using (public.pode_ver_obras());
 drop policy if exists log_ins on public.obra_log;
 create policy log_ins on public.obra_log for insert to authenticated with check (public.is_admin());
 
@@ -237,37 +262,48 @@ insert into storage.buckets (id, name, public)
 values ('projetos', 'projetos', false)
 on conflict (id) do nothing;
 
+-- Leitura por PREFIXO (mesma regra da migracao_privacidade.sql):
+--   orcamentos/% -> comercial · restrito/% -> só admin · demais -> quem vê obras
 drop policy if exists projetos_sel on storage.objects;
 create policy projetos_sel on storage.objects for select to authenticated
-  using (bucket_id = 'projetos');
+  using (bucket_id = 'projetos' and (
+    public.is_admin()
+    or (public.is_comercial() and name like 'orcamentos/%')
+    or (public.pode_ver_obras() and name not like 'orcamentos/%' and name not like 'restrito/%')
+  ));
+-- Escrita: admin tudo; comercial só sob orcamentos/ (igual à migracao_orcamentos.sql)
 drop policy if exists projetos_ins on storage.objects;
 create policy projetos_ins on storage.objects for insert to authenticated
-  with check (bucket_id = 'projetos' and public.is_admin());
+  with check (bucket_id = 'projetos'
+    and (public.is_admin() or (public.is_comercial() and name like 'orcamentos/%')));
 drop policy if exists projetos_upd on storage.objects;
 create policy projetos_upd on storage.objects for update to authenticated
-  using (bucket_id = 'projetos' and public.is_admin());
+  using (bucket_id = 'projetos'
+    and (public.is_admin() or (public.is_comercial() and name like 'orcamentos/%')));
 drop policy if exists projetos_del on storage.objects;
 create policy projetos_del on storage.objects for delete to authenticated
-  using (bucket_id = 'projetos' and public.is_admin());
+  using (bucket_id = 'projetos'
+    and (public.is_admin() or (public.is_comercial() and name like 'orcamentos/%')));
 
 
 -- =====================================================================
 --  SEED — EQUIPE (os 7 da frente + Douglas coringa + Wagner parceiro)
---  Roda de novo sem duplicar (apaga e recria pelos nomes conhecidos).
+--  SÓ entra se a tabela estiver VAZIA — rodar de novo NUNCA apaga/reverte
+--  as edições feitas na aba Equipe do painel.
 -- =====================================================================
-delete from public.equipe where nome in
-  ('Valdir','Paulinho','Junior','Adeilson','Pedro','Gledson','Beto','Douglas','Wagner');
-
-insert into public.equipe (nome, funcao, principais, habilidades, coringa, parceiro, ativo) values
-  ('Valdir',   'Instalador',            '{SHP,SPDA}',        '{SHP,SPDA,VITAIS,SDAI}',          false, false, true),
-  ('Paulinho', 'Instalador',            '{SHP,SPDA}',        '{SHP,SPDA,VITAIS,SDAI}',          false, false, true),
-  ('Junior',   'Instalador (faz tudo)', '{SHP,SPDA,SDAI}',   '{SHP,SPDA,SDAI,VITAIS}',          false, false, true),
-  ('Adeilson', 'Instalador / Skid',     '{GAS,SPDA,SHP,SKID}','{GAS,SPDA,SHP,VITAIS,SKID}',     false, false, true),
-  ('Pedro',    'Instalador / Skid',     '{GAS,SPDA,SHP,SKID}','{GAS,SPDA,SHP,VITAIS,SKID}',     false, false, true),
-  ('Beto',     'Alarme / Vitais',       '{SDAI,VITAIS}',     '{SDAI,VITAIS}',                   false, false, true),
-  ('Gledson',  'Ajudante',              '{AJUDANTE}',        '{AJUDANTE}',                      false, false, true),
-  ('Douglas',  'Coringa (alarme/vitais, por fora)', '{SDAI,VITAIS}', '{SDAI,VITAIS}',          true,  false, true),
-  ('Wagner',   'Parceiro — painel elétrico / start-up de bombas', '{PAINEL_ELETRICO,STARTUP_BOMBA}', '{PAINEL_ELETRICO,STARTUP_BOMBA}', false, true, true);
+insert into public.equipe (nome, funcao, principais, habilidades, coringa, parceiro, ativo)
+select * from (values
+  ('Valdir',   'Instalador',            '{SHP,SPDA}'::text[],        '{SHP,SPDA,VITAIS,SDAI}'::text[],          false, false, true),
+  ('Paulinho', 'Instalador',            '{SHP,SPDA}'::text[],        '{SHP,SPDA,VITAIS,SDAI}'::text[],          false, false, true),
+  ('Junior',   'Instalador (faz tudo)', '{SHP,SPDA,SDAI}'::text[],   '{SHP,SPDA,SDAI,VITAIS}'::text[],          false, false, true),
+  ('Adeilson', 'Instalador / Skid',     '{GAS,SPDA,SHP,SKID}'::text[],'{GAS,SPDA,SHP,VITAIS,SKID}'::text[],     false, false, true),
+  ('Pedro',    'Instalador / Skid',     '{GAS,SPDA,SHP,SKID}'::text[],'{GAS,SPDA,SHP,VITAIS,SKID}'::text[],     false, false, true),
+  ('Beto',     'Alarme / Vitais',       '{SDAI,VITAIS}'::text[],     '{SDAI,VITAIS}'::text[],                   false, false, true),
+  ('Gledson',  'Ajudante',              '{AJUDANTE}'::text[],        '{AJUDANTE}'::text[],                      false, false, true),
+  ('Douglas',  'Coringa (alarme/vitais, por fora)', '{SDAI,VITAIS}'::text[], '{SDAI,VITAIS}'::text[],          true,  false, true),
+  ('Wagner',   'Parceiro — painel elétrico / start-up de bombas', '{PAINEL_ELETRICO,STARTUP_BOMBA}'::text[], '{PAINEL_ELETRICO,STARTUP_BOMBA}'::text[], false, true, true)
+) as v(nome, funcao, principais, habilidades, coringa, parceiro, ativo)
+where not exists (select 1 from public.equipe);
 
 -- =====================================================================
 --  FIM. Próximo passo: criar os usuários de login (ver SETUP.md, passo 4)

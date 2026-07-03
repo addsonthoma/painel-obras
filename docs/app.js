@@ -53,7 +53,10 @@ function toast(msg, erro){ const t=$('#toast'); t.textContent=msg; t.className='
 function dataBR(d){ if(!d) return '—'; const x=new Date(d.length<=10?d+'T00:00:00':d); return x.toLocaleDateString('pt-BR'); }
 function moeda(v){ return v==null?'—':Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 function soDigitos(t){ return (t||'').replace(/\D/g,''); }
-function waLink(tel, texto){ let d=soDigitos(tel); if(!d) return null; if(d.length<=11) d='55'+d; return `https://wa.me/${d}?text=${encodeURIComponent(texto||'')}`; }
+function waLink(tel, texto){ let d=soDigitos(tel); if(!d) return null;
+  if(d.length===10||d.length===11) d='55'+d;                                    // DDD+número -> adiciona 55
+  else if(!((d.length===12||d.length===13)&&d.startsWith('55'))) return null;   // curto/estranho -> sem link
+  return `https://wa.me/${d}?text=${encodeURIComponent(texto||'')}`; }
 function abrirModal(html){ $('#modal-conteudo').innerHTML=html; $('#modal-fundo').classList.remove('hidden'); state.modalAberto=true; }
 function fecharModal(){ $('#modal-fundo').classList.add('hidden'); $('#modal-conteudo').innerHTML=''; state.modalAberto=false; }
 
@@ -295,7 +298,7 @@ function ordenarUrgencia(arr){
   });
 }
 
-function cardObra(o){
+function cardObra(o, extra){
   const dias=diasRestantes(o), u=urg(dias,o.status_execucao);
   const servs=(o.obra_servicos||[]).map(s=>`<span class="chip-serv ${s.servico}">${esc(SERVICOS[s.servico]?.label||s.servico)}</span>`).join('');
   const equipe=(o.equipe_confirmada?.length?o.equipe_confirmada:o.equipe_sugerida)||[];
@@ -312,7 +315,7 @@ function cardObra(o){
     <div class="servicos-chips">${servs||'<span class="card-end">sem serviço</span>'}</div>
     <div class="card-prazo">⏱ <span class="dias urg-${u}">${textoDias(dias)}</span>
       ${o.data_prazo?`<small>até ${dataBR(o.data_prazo)}</small>`:''} ${o.tem_skid?'<span class="chip-serv">SKID</span>':''}</div>
-    <div class="card-equipe">${eqTxt}</div>
+    <div class="card-equipe">${eqTxt}</div>${extra||''}
     <div class="card-rodape">
       <button class="btn btn-sec btn-sm js-materiais" data-id="${o.id}">🖨 Materiais</button>
       ${cob}
@@ -333,11 +336,7 @@ function renderObras(){
 
 function renderPendencias(){
   const arr=ordenarUrgencia(state.obras.filter(o=>o.status_execucao==='pendente_material'));
-  $('#lista-pendencias').innerHTML = arr.map(o=>{
-    const c=cardObra(o);
-    const obs=o.pendencia_obs?`<div class="nota">📦 ${esc(o.pendencia_obs)}</div>`:'';
-    return c.replace('</div>\n    <div class="card-rodape">', obs+'</div>\n    <div class="card-rodape">');
-  }).join('');
+  $('#lista-pendencias').innerHTML = arr.map(o=>cardObra(o, o.pendencia_obs?`<div class="nota">📦 ${esc(o.pendencia_obs)}</div>`:'')).join('');
   $('#pend-vazio').classList.toggle('hidden', arr.length>0);
   ligarCards('#lista-pendencias');
 }
@@ -441,7 +440,7 @@ function abrirObra(id){
       <button class="btn btn-sec btn-sm js-status" data-s="em_andamento">Em andamento</button>
       <button class="btn btn-aviso btn-sm js-status" data-s="pendente_material">Pendente material</button>
       <button class="btn btn-sm js-status" data-s="pendente_execucao" style="background:#7a3bd0;color:#fff">Pendente execução</button>
-      <button class="btn btn-ok btn-sm" id="js-concluir">✓ Confirmar 100% concluída</button>
+      ${o.status_execucao!=='concluida'?'<button class="btn btn-ok btn-sm" id="js-concluir">✓ Confirmar 100% concluída</button>':''}
     </div>${o.pendencia_obs?`<div class="nota">Pendência anotada: ${esc(o.pendencia_obs)}</div>`:''}</div>`;
     // cobrança
     if(fin && fin.status_cobranca!=='nao_aplicavel'){
@@ -476,7 +475,7 @@ function abrirObra(id){
     $('#js-up-pdf').onclick=()=>$('#js-pdf-input').click();
     $('#js-pdf-input').onchange=e=>uploadPDF(o, e.target.files[0]);
     document.querySelectorAll('.js-status').forEach(b=>b.onclick=()=>mudarStatus(o.id,b.dataset.s));
-    $('#js-concluir').onclick=()=>concluirObra(o);
+    $('#js-concluir') && ($('#js-concluir').onclick=()=>concluirObra(o));
     $('#js-editar').onclick=()=>formObra(o);
     $('#js-excluir').onclick=()=>excluirObra(o);
   }
@@ -509,9 +508,11 @@ async function concluirObra(o){
   const ok=await salvarCampos(o.id,{ status_execucao:'concluida', pendencia_obs:null,
     concluida_por:state.user.id, concluida_por_nome:state.perfil?.nome||state.user.email, concluida_em:new Date().toISOString() });
   if(!ok) return;
-  // joga para cobrança (a_cobrar), preservando valor_total
+  // joga para cobrança (a_cobrar), preservando valor_total.
+  // Se a cobrança já andou (enviada/paga), NÃO volta pra trás — evita recobrar cliente.
   const fin=state.financeiro[o.id]||{};
-  await sb.from('obra_financeiro').upsert({ obra_id:o.id, valor_total:fin.valor_total??null, status_cobranca:'a_cobrar' });
+  const cobAtual=(fin.status_cobranca && fin.status_cobranca!=='nao_aplicavel')?fin.status_cobranca:'a_cobrar';
+  await sb.from('obra_financeiro').upsert({ obra_id:o.id, valor_total:fin.valor_total??null, status_cobranca:cobAtual });
   await logar(o.id,'conclusão','Confirmada 100% concluída → enviada para cobrança');
   await carregarTudo(true); toast('✓ Concluída e enviada para Cobranças.'); abrirObra(o.id);
 }
@@ -528,11 +529,18 @@ async function marcarCobranca(id, status){
 function whatsappCobranca(id){
   const o=state.obras.find(x=>x.id===id); const fin=state.financeiro[id];
   const txt=`Olá! Aqui é da Rodrigues Preventivos. Referente ao serviço${o.orcamento_qs?' (orç. '+o.orcamento_qs+')':''} na obra ${o.cliente}, segue a cobrança no valor de ${moeda(fin.valor_cobrado??fin.valor_total)}. Qualquer dúvida estamos à disposição!`;
-  const l=waLink(o.telefone_cliente,txt); if(l) window.open(l,'_blank'); else toast('Sem telefone do cliente.',true);
+  const l=waLink(o.telefone_cliente,txt); if(l) window.open(l,'_blank'); else toast('Telefone do cliente ausente ou incompleto (precisa de DDD).',true);
 }
 
 async function excluirObra(o){
   if(!confirm(`Excluir a obra "${o.cliente}"? Esta ação não pode ser desfeita.`)) return;
+  // apaga também os ARQUIVOS do Storage (o banco apaga em cascata, o bucket não)
+  try{
+    const { data:ax }=await sb.from('obra_anexos').select('path').eq('obra_id',o.id);
+    const paths=(ax||[]).map(a=>a.path);
+    if(o.projeto_pdf_path) paths.push(o.projeto_pdf_path);
+    if(paths.length) await sb.storage.from('projetos').remove(paths);
+  }catch(e){}
   const {error}=await sb.from('obras').delete().eq('id',o.id);
   if(error){toast(error.message,true);return;}
   fecharModal(); await carregarTudo(true); toast('Obra excluída.');
@@ -585,18 +593,24 @@ async function carregarAnexos(id){
   if(error){ el.innerHTML='<span class="card-end">Anexos indisponíveis — rode a migração SQL (migracao_anexos_obs.sql).</span>'; return; }
   if(!data||!data.length){ el.innerHTML='<span class="card-end">Nenhum anexo.</span>'; return; }
   el.innerHTML=data.map(a=>`<div class="anexo-item"><a href="#" class="js-ver-anexo" data-p="${esc(a.path)}">📄 ${esc(a.nome)}</a>
+    ${a.restrito?'<small title="Contém valores — só admins veem">🔒</small>':''}
     <small>${a.criado_por_nome?esc(a.criado_por_nome):''}</small>
     ${state.isAdmin?`<button class="x-row js-del-anexo" data-id="${a.id}" data-p="${esc(a.path)}" title="Excluir">×</button>`:''}</div>`).join('');
   el.querySelectorAll('.js-ver-anexo').forEach(x=>x.onclick=ev=>{ev.preventDefault(); verAnexo(x.dataset.p);});
   el.querySelectorAll('.js-del-anexo').forEach(x=>x.onclick=()=>excluirAnexo(id, x.dataset.id, x.dataset.p));
 }
-async function uploadAnexo(o, file){
+async function uploadAnexo(o, file, restrito){
   if(!file) return; toast('Enviando anexo…');
-  const path=`${o.id}/anexos/${Date.now()}_${file.name.replace(/[^\w.\-]/g,'_')}`;
+  // restrito = contém VALORES (ex.: PDF do Quanto Sobra) -> prefixo restrito/ no
+  // Storage + flag na tabela; operação (campo) não vê (RLS + policy por prefixo).
+  const base = restrito ? `restrito/${o.id}/anexos/` : `${o.id}/anexos/`;
+  const path = base+`${Date.now()}_${file.name.replace(/[^\w.\-]/g,'_')}`;
   const { error }=await sb.storage.from('projetos').upload(path, file);
   if(error){ toast('Erro no upload: '+error.message, true); return; }
-  const { error:e2 }=await sb.from('obra_anexos').insert({ obra_id:o.id, nome:file.name, path,
-    mime:file.type||null, tamanho:file.size||null, criado_por_nome:state.perfil?.nome||state.user.email });
+  const linha={ obra_id:o.id, nome:file.name, path,
+    mime:file.type||null, tamanho:file.size||null, criado_por_nome:state.perfil?.nome||state.user.email };
+  let { error:e2 }=await sb.from('obra_anexos').insert({ ...linha, restrito:!!restrito });
+  if(e2 && /restrito/i.test(e2.message)){ ({ error:e2 }=await sb.from('obra_anexos').insert(linha)); } // migração ainda não rodou
   if(e2){ toast('Erro: '+e2.message, true); return; }
   await logar(o.id,'anexo','Anexou '+file.name); toast('Anexo enviado.'); carregarAnexos(o.id);
 }
@@ -722,7 +736,9 @@ function formObra(o){
       if(qs.total!=null) partes.push('Valor '+moeda(qs.total));
       partes.push('serviços: <b>'+qs.servicos.map(s=>SERVICOS[s]?.label||s).join(', ')+'</b>');
       partes.push('<b>'+qs.itens.length+'</b> materiais');
-      msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Confira os dias×pessoas. PDF(s) anexados ao salvar.';
+      const dup=orsJaExistem(qs.orcamento_qs, state.obras, o?.id);
+      msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Confira os dias×pessoas. PDF(s) anexados ao salvar.'
+        +(dup.length?`<br>⚠ <b>Já existe obra com ${esc(dup.join(', '))}</b> — confira antes de salvar.`:'');
     }catch(err){ msg.textContent='Não consegui ler o PDF: '+err.message; }
   };
   $('#eq-pick').querySelectorAll('.pessoa-chip').forEach(c=>c.onclick=()=>c.classList.toggle('sel'));
@@ -745,6 +761,19 @@ function lerServicos(){ const servicos=[]; let temSkid=$('#form-obra [name=tem_s
   document.querySelectorAll('#serv-list .serv-row').forEach(r=>{ const s=r.querySelector('.f-serv').value; if(s) servicos.push(s); });
   return {servicos,temSkid}; }
 
+// Confere se algum OR ("OR930" ou "OR930 + OR931") já existe na lista (obras ou orçamentos).
+function orsJaExistem(orStr, lista, ignorarId){
+  const toks=(orStr||'').toUpperCase().split(/[+,;\s]+/).filter(t=>/^OR\d+/.test(t));
+  if(!toks.length) return [];
+  const achados=[];
+  for(const x of (lista||[])){
+    if(ignorarId && x.id===ignorarId) continue;
+    const dele=new Set((x.orcamento_qs||'').toUpperCase().split(/[+,;\s]+/));
+    toks.forEach(t=>{ if(dele.has(t)) achados.push(`${t} (${x.cliente})`); });
+  }
+  return [...new Set(achados)];
+}
+
 async function salvarObra(o){
   const f=$('#form-obra');
   const cliente=f.cliente.value.trim(); if(!cliente){ toast('Informe o cliente.',true); return; }
@@ -762,6 +791,12 @@ async function salvarObra(o){
     orcamento_qs:f.orcamento_qs.value.trim()||null, data_inicio:f.data_inicio.value||null, data_prazo:f.data_prazo.value||null,
     tem_skid:temSkid, observacoes:f.observacoes.value.trim()||null, equipe_sugerida:sug.equipe, equipe_confirmada:equipe };
 
+  // aviso de OR duplicada (só na criação — na edição o OR pertence à própria obra)
+  if(!o){
+    const dup=orsJaExistem(dados.orcamento_qs, state.obras, null);
+    if(dup.length && !confirm('⚠ Já existe obra com '+dup.join(', ')+'.\nCriar mesmo assim?')) return;
+  }
+
   let obraId=o?.id;
   if(o){ const {error}=await sb.from('obras').update(dados).eq('id',o.id); if(error){toast(error.message,true);return;} }
   else { const {data,error}=await sb.from('obras').insert(dados).select('id').single(); if(error){toast(error.message,true);return;} obraId=data.id; }
@@ -776,8 +811,8 @@ async function salvarObra(o){
   const finAtual=state.financeiro[obraId];
   await sb.from('obra_financeiro').upsert({ obra_id:obraId, valor_total:valor, status_cobranca:finAtual?.status_cobranca||'nao_aplicavel' });
 
-  // anexa os PDFs do Quanto Sobra importados (se houver)
-  if(_qsObraFiles && _qsObraFiles.length){ for(const file of _qsObraFiles){ await uploadAnexo({id:obraId}, file); } _qsObraFiles=[]; }
+  // anexa os PDFs do Quanto Sobra importados (RESTRITOS: têm preços — campo não vê)
+  if(_qsObraFiles && _qsObraFiles.length){ for(const file of _qsObraFiles){ await uploadAnexo({id:obraId}, file, true); } _qsObraFiles=[]; }
 
   await logar(obraId, o?'edição':'criação', o?'Editou a obra':'Cadastrou a obra');
   await carregarTudo(true); toast(o?'Obra atualizada.':'Obra criada.'); abrirObra(obraId);
@@ -840,7 +875,7 @@ async function carregarMonitor(){
 function _addMeses(s,n){ const d=new Date(s+'T00:00:00'); d.setMonth(d.getMonth()+n); return d; }
 function _addAnos(s,n){ const d=new Date(s+'T00:00:00'); d.setFullYear(d.getFullYear()+n); return d; }
 function _diasDe(d){ const h=new Date(); h.setHours(0,0,0,0); return Math.round((d-h)/86400000); }
-function _iso(d){ return d.toISOString().slice(0,10); }
+function _iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); } // data LOCAL (toISOString viraria o dia após ~21h no Brasil)
 function funcStatus(re){
   let v=null;
   if(re.funcionamento_validade) v=new Date(re.funcionamento_validade+'T00:00:00');
@@ -943,23 +978,35 @@ function abrirRE(id){
       ${a.prazo?'<div class="auto-exig"><b>Prazo:</b> '+esc(a.prazo)+'</div>':''}
       ${a.exigencia?'<div class="auto-exig"><b>Motivo:</b> '+esc(a.exigencia)+'</div>':''}
       ${state.isAdmin?`<div class="acoes-status" style="margin-top:6px">
-        <button class="btn btn-sec btn-sm js-valor-auto" data-id="${a.id}" data-v="${a.valor??''}">💰 ${a.valor!=null?'Editar valor':'Valor da multa'}</button>
+        <button class="btn btn-sec btn-sm js-valor-auto" data-id="${a.id}" data-v="${a.valor!=null?String(a.valor).replace('.',','):''}">💰 ${a.valor!=null?'Editar valor':'Valor da multa'}</button>
         ${!a.resolvido?`<button class="btn btn-ok btn-sm js-resolver" data-id="${a.id}">Resolver</button>`:''}</div>`:''}</div>`).join('')
     : '<span class="card-end">Nenhum auto encontrado. O coletor checa o e-SCI a cada 2 dias.</span>';
   html+=`</div>`;
   if(re.ultima_verificacao) html+=`<p class="det-sub">Última checagem do e-SCI: ${new Date(re.ultima_verificacao).toLocaleString('pt-BR')}</p>`;
   if(state.isAdmin) html+=`<div class="form-acoes"><button class="btn btn-ghost" id="re-del">Excluir RE</button><button class="btn btn-sec" id="re-edit">Editar RE</button></div>`;
   abrirModal(html);
-  $('#re-func') && ($('#re-func').onclick=async()=>{ const v=prompt('Data de emissão do último funcionamento (AAAA-MM-DD):', re.funcionamento_data||''); if(v===null)return; await sb.from('monitor_res').update({funcionamento_data:v.trim()||null}).eq('id',re.id); await carregarMonitor(); abrirRE(re.id); toast('Funcionamento atualizado.'); });
-  $('#re-manut') && ($('#re-manut').onclick=async()=>{ await sb.from('monitor_res').update({ultima_manutencao:new Date().toISOString().slice(0,10)}).eq('id',re.id); await carregarMonitor(); abrirRE(re.id); toast('Manutenção registrada (hoje).'); });
-  $('#re-manut-data') && ($('#re-manut-data').onclick=async()=>{ const v=prompt('Data da última manutenção (AAAA-MM-DD):', re.ultima_manutencao||''); if(v===null)return; await sb.from('monitor_res').update({ultima_manutencao:v.trim()||null}).eq('id',re.id); await carregarMonitor(); abrirRE(re.id); });
+  $('#re-func') && ($('#re-func').onclick=async()=>{ const v=prompt('Data de emissão do último funcionamento (AAAA-MM-DD):', re.funcionamento_data||''); if(v===null)return;
+    const val=v.trim(); if(val && !/^\d{4}-\d{2}-\d{2}$/.test(val)){ toast('Data inválida — use AAAA-MM-DD.',true); return; }
+    const {error}=await sb.from('monitor_res').update({funcionamento_data:val||null}).eq('id',re.id);
+    if(error){ toast(error.message,true); return; }
+    await carregarMonitor(); abrirRE(re.id); toast('Funcionamento atualizado.'); });
+  $('#re-manut') && ($('#re-manut').onclick=async()=>{ const {error}=await sb.from('monitor_res').update({ultima_manutencao:_iso(new Date())}).eq('id',re.id);
+    if(error){ toast(error.message,true); return; }
+    await carregarMonitor(); abrirRE(re.id); toast('Manutenção registrada (hoje).'); });
+  $('#re-manut-data') && ($('#re-manut-data').onclick=async()=>{ const v=prompt('Data da última manutenção (AAAA-MM-DD):', re.ultima_manutencao||''); if(v===null)return;
+    const val=v.trim(); if(val && !/^\d{4}-\d{2}-\d{2}$/.test(val)){ toast('Data inválida — use AAAA-MM-DD.',true); return; }
+    const {error}=await sb.from('monitor_res').update({ultima_manutencao:val||null}).eq('id',re.id);
+    if(error){ toast(error.message,true); return; }
+    await carregarMonitor(); abrirRE(re.id); });
   $('#re-edit') && ($('#re-edit').onclick=()=>formRE(cli.id, re));
   $('#re-del') && ($('#re-del').onclick=async()=>{ if(!confirm('Excluir esta RE?'))return; await sb.from('monitor_res').delete().eq('id',re.id); await carregarMonitor(); fecharModal(); toast('RE excluída.'); });
-  document.querySelectorAll('.js-resolver').forEach(b=>b.onclick=async()=>{ await sb.from('monitor_autos').update({resolvido:true,novo:false}).eq('id',b.dataset.id); await carregarMonitor(); abrirRE(re.id); toast('Auto resolvido.'); });
+  document.querySelectorAll('.js-resolver').forEach(b=>b.onclick=async()=>{ const {error}=await sb.from('monitor_autos').update({resolvido:true,novo:false}).eq('id',b.dataset.id);
+    if(error){ toast(error.message,true); return; }
+    await carregarMonitor(); abrirRE(re.id); toast('Auto resolvido.'); });
   document.querySelectorAll('.js-valor-auto').forEach(b=>b.onclick=async()=>{
-    const v=prompt('Valor da multa (R$):', b.dataset.v||'');
+    const v=prompt('Valor da multa (R$) — ex.: 1.500,50:', b.dataset.v||'');
     if(v===null) return;
-    const val = v.trim()===''?null:_valorBR(v.replace(/[r$\s]/gi,''));
+    const val = v.trim()===''?null:valorDigitado(v);
     if(val!==null && isNaN(val)){ toast('Valor inválido.',true); return; }
     const {error}=await sb.from('monitor_autos').update({valor:val}).eq('id',b.dataset.id);
     if(error){ toast(error.message,true); return; }
@@ -1188,7 +1235,7 @@ async function marcarEnviadoOrc(id){
     ultimo_contato:null, proximo_followup:_iso(prox) });
   if(!ok) return;
   await contatoLog(id,'sistema','Orçamento marcado como FEITO e ENVIADO ao cliente — follow-up em 7 dias.');
-  await carregarTudo(true); toast('Marcado como enviado. Follow-up em 7 dias. ✓');
+  toast('Marcado como enviado. Follow-up em 7 dias. ✓');
   if(state.modalAberto) abrirOrc(id);
 }
 function whatsappOrc(id){
@@ -1222,7 +1269,7 @@ function dialogContato(id){
       ultimo_contato:agora.toISOString(), proximo_followup:_iso(prox) });
     if(!ok) return;
     await contatoLog(o.id, $('#dc-canal').value, $('#dc-obs').value.trim()||'Contato registrado.');
-    await carregarTudo(true); toast('Contato registrado. Reiniciou os 7 dias. ✓'); abrirOrc(o.id);
+    toast('Contato registrado. Reiniciou os 7 dias. ✓'); abrirOrc(o.id);
   };
   $('#dc-ganho').onclick=()=>ganharOrc(o);
   $('#dc-perdido').onclick=()=>dialogPerda(o);
@@ -1236,7 +1283,6 @@ async function ganharOrc(o){
   if(state.isAdmin && !o.obra_id){
     await criarObraDeOrcamento(o);   // já recarrega, dá toast e reabre o detalhe
   } else {
-    await carregarTudo(true);
     toast(state.isAdmin ? 'Fechado! 🏆' : 'Fechado! 🏆 (um admin vai lançar como obra)');
     if(state.modalAberto) abrirOrc(o.id);
   }
@@ -1272,7 +1318,7 @@ function dialogPerda(o){
       motivo_perda_tipo:tipo, motivo_perda:obs, proximo_followup:null });
     if(!ok) return;
     await contatoLog(o.id,'sistema',`❌ Perdido — ${MOTIVO_PERDA[tipo]}${obs?': '+obs:''}`);
-    await carregarTudo(true); toast('Movido para Perdidos.'); abrirOrc(o.id);
+    toast('Movido para Perdidos.'); abrirOrc(o.id);
   };
 }
 async function reabrirOrc(o){
@@ -1282,10 +1328,16 @@ async function reabrirOrc(o){
     motivo_perda_tipo:null, motivo_perda:null, ultimo_contato:agora.toISOString(), proximo_followup:_iso(prox) });
   if(!ok) return;
   await contatoLog(o.id,'sistema','↩ Reaberto.');
-  await carregarTudo(true); toast('Reaberto.'); abrirOrc(o.id);
+  toast('Reaberto.'); abrirOrc(o.id);
 }
 async function excluirOrc(o){
   if(!confirm(`Excluir o orçamento de "${o.cliente}"? Não dá pra desfazer.`)) return;
+  // apaga também os arquivos do Storage (o banco apaga em cascata, o bucket não)
+  try{
+    const { data:ax }=await sb.from('orcamento_anexos').select('path').eq('orcamento_id',o.id);
+    const paths=(ax||[]).map(a=>a.path);
+    if(paths.length) await sb.storage.from('projetos').remove(paths);
+  }catch(e){}
   const {error}=await sb.from('orcamentos').delete().eq('id',o.id);
   if(error){toast(error.message,true);return;}
   fecharModal(); await carregarTudo(true); toast('Orçamento excluído.');
@@ -1346,7 +1398,18 @@ async function lerLinhasPdf(file){
   }
   return linhas;
 }
-function _valorBR(s){ return parseFloat(String(s).replace(/\./g,'').replace(',','.')); }
+function _valorBR(s){ return parseFloat(String(s).replace(/\./g,'').replace(',','.')); } // só p/ PDF do QS (formato BR garantido)
+// Valor DIGITADO pelo usuário: aceita "1.500,50", "1500,50", "1500.50" e "1500".
+// (o _valorBR trataria "1500.50" como 150050 — ponto decimal é comum ao digitar)
+function valorDigitado(s){
+  s=String(s).replace(/[rR]\$/g,'').replace(/\s/g,'').trim(); if(!s) return NaN;
+  if(s.includes(',')) return parseFloat(s.replace(/\./g,'').replace(',','.'));  // formato BR
+  if(s.includes('.')){ const p=s.split('.');
+    if(p.length===2 && p[1].length!==3) return parseFloat(s);                    // 1500.5 / 1500.50 -> decimal
+    return parseFloat(s.replace(/\./g,''));                                     // 1.500 / 1.500.000 -> milhar
+  }
+  return parseFloat(s);
+}
 function _ultimoValor(s){ const m=[...String(s).matchAll(/(\d{1,3}(?:\.\d{3})*,\d{2})/g)]; return m.length?_valorBR(m[m.length-1][1]):null; }
 // Lê o PDF do Quanto Sobra no layout REAL:
 //   cabeçalho da empresa · "Dados do Cliente" + nome · tabela
@@ -1382,7 +1445,8 @@ function extrairQS(linhas){
   return out;
 }
 
-/* ---------- detecção de serviço (pistas por nome de item — portado do importar_qs.py) ---------- */
+/* ---------- detecção de serviço (pistas por nome de item — portado do importar_qs.py) ----------
+   ⚠ manter em SINCRONIA com o dicionário PISTAS de scripts/importar_qs.py (mesma lista). */
 const PISTAS_QS = {
   SHP:   ['hidrante','mangueira','mangotinho','ranhurado','tubo aço','tubo aco','tubo carbono','tubo galv','registro','esguicho','storz','niple','flange','valvula gaveta','válvula gaveta','skid','abrigo de mangueira','tubulaç','tubulac','valvula retenção','valvula retencao','joelho galv','cotovelo galv'],
   SDAI:  ['central alarme','central de alarme','detector','acionador','sirene','audio visual','áudio visual','endereç','enderec','cabo blindado','fonte auxiliar','módulo de endere','modulo de endere','avisador','módulo de comunica','modulo de comunica','bateria 12v'],
@@ -1474,7 +1538,9 @@ function formOrc(o){
       if(qs.orcamento_qs) partes.push(esc(qs.orcamento_qs));
       if(qs.total!=null) partes.push('Valor '+moeda(qs.total));
       partes.push(qs.itens.length?('<b>'+qs.itens.length+'</b> materiais (confira!)'):'sem materiais — adicione à mão');
-      msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Anexo(s) ao salvar.';
+      const dup=orsJaExistem(qs.orcamento_qs, state.orcamentos, o?.id);
+      msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Anexo(s) ao salvar.'
+        +(dup.length?`<br>⚠ <b>Já existe orçamento com ${esc(dup.join(', '))}</b> — confira antes de salvar.`:'');
     }catch(err){ msg.textContent='Não consegui ler o PDF: '+err.message; }
   };
   $('#form-orc').onsubmit=e=>{ e.preventDefault(); salvarOrc(o); };
@@ -1500,6 +1566,12 @@ async function salvarOrc(o){
     dados.status='enviado'; dados.enviado_em=o?.enviado_em||agora.toISOString(); dados.proximo_followup=_iso(prox);
   }
   if(!o){ dados.criado_por_nome=state.perfil?.nome||state.user.email; }
+
+  // aviso de OR duplicada (só na criação)
+  if(!o){
+    const dup=orsJaExistem(dados.orcamento_qs, state.orcamentos, null);
+    if(dup.length && !confirm('⚠ Já existe orçamento com '+dup.join(', ')+'.\nCriar mesmo assim?')) return;
+  }
 
   let orcId=o?.id;
   if(o){ const {error}=await sb.from('orcamentos').update(dados).eq('id',o.id); if(error){toast(error.message,true);return;} }
@@ -1578,6 +1650,7 @@ function statsRenov(){
   const at=state.renovacoes.filter(c=>!c.baixada);
   const dd=c=>diasAteRenov(c.vencimento);
   const s={
+    vencido: at.filter(c=>c.vencimento&&dd(c)<0).length,
     urgente: at.filter(c=>dd(c)>=0&&dd(c)<=7).length,
     vencendo:at.filter(c=>dd(c)>=0&&dd(c)<=30).length,
     total:   at.length,
@@ -1586,7 +1659,7 @@ function statsRenov(){
     pendente:at.filter(c=>c.status_contato==='Não contatado'&&c.email).length,
   };
   const card=(num,lbl,cls)=>`<div class="renov-card"><div class="renov-num ${cls||''}">${num}</div><div class="renov-lbl">${lbl}</div></div>`;
-  el.innerHTML = card(s.urgente,'urgente ≤7d','rojo')+card(s.vencendo,'vencendo ≤30d','ambar')+
+  el.innerHTML = card(s.vencido,'já vencidos','rojo')+card(s.urgente,'urgente ≤7d','rojo')+card(s.vencendo,'vencendo ≤30d','ambar')+
     card(s.total,'total monitorados','')+card(s.email,'com e-mail','azul')+
     card(s.contratado,'contratados','verde')+card(s.pendente,'aguardando contato','info');
 }
@@ -1624,7 +1697,7 @@ function cardRenov(c){
     <div class="card-topo">
       <div><div class="card-cliente">${esc(c.contratante)}</div>
         ${c.cidade?`<div class="card-end">${esc(c.cidade)}</div>`:''}
-        <div class="card-prazo">⏱ ${badgeDiasRenov(d,c.baixada)} ${c.vencimento?`<small>vence ${dataBR(c.vencimento)}</small>`:'<small>sem vencimento</small>'}</div></div>
+        <div class="card-prazo">⏱ ${(c.vencimento||c.baixada)?badgeDiasRenov(d,c.baixada):'<span class="dias urg-cinza">—</span>'} ${c.vencimento?`<small>vence ${dataBR(c.vencimento)}</small>`:'<small>sem vencimento</small>'}</div></div>
       <span class="status-badge ${stCls}">${esc(c.status_contato)}</span>
     </div>
     ${chips?`<div class="servicos-chips">${chips}</div>`:''}
@@ -1643,10 +1716,12 @@ async function mudarStatusRenov(id, status){
   let campos={status_contato:status};
   let renovou=false;
   if(status==='Contratado'){
-    // avança o vencimento 1 ano e volta p/ "Não contatado" (próximo ciclo)
+    // avança +1 ano mantendo o "aniversário", repetindo até cair no FUTURO
+    // (cliente muito atrasado não pode renovar para data já vencida); volta p/ "Não contatado".
     let base=c.vencimento?new Date(c.vencimento+'T00:00:00'):new Date();
-    base.setFullYear(base.getFullYear()+1);
-    campos.vencimento=base.toISOString().slice(0,10);
+    const hoje=new Date(); hoje.setHours(0,0,0,0);
+    do{ base.setFullYear(base.getFullYear()+1); } while(base<=hoje);
+    campos.vencimento=_iso(base);
     campos.status_contato='Não contatado';
     renovou=true;
   }
@@ -1666,7 +1741,7 @@ function formRenov(c){
       <label class="campo">CNPJ / CPF<input name="cnpj_cpf" value="${esc(c?.cnpj_cpf||'')}"></label>
       <label class="campo">Cidade<input name="cidade" value="${esc(c?.cidade||'')}"></label>
       <label class="campo full">Endereço da obra<input name="endereco" value="${esc(c?.endereco||'')}"></label>
-      <label class="campo">E-mail<input type="email" name="email" value="${esc(c?.email||'')}"></label>
+      <label class="campo">E-mail<input type="text" inputmode="email" name="email" value="${esc(c?.email||'')}"></label>
       <label class="campo">Telefone<input name="telefone" value="${esc(c?.telefone||'')}"></label>
       <label class="campo">Próximo vencimento<input type="date" name="vencimento" value="${c?.vencimento||''}"></label>
       <label class="campo">Status<select name="status_contato">${stOpts}</select></label>
@@ -1709,7 +1784,10 @@ function gerarAssuntoRenov(nome){
     .map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase());
   return 'Renovação de Laudos e ARTs – '+palavras.slice(0,3).join(' ');
 }
-function foneWaRenov(tel){ const dig=soDigitos((tel||'').split('/')[0]); return (dig.length===10||dig.length===11)?'55'+dig:null; }
+function foneWaRenov(tel){ const dig=soDigitos((tel||'').split('/')[0]);
+  if(dig.length===10||dig.length===11) return '55'+dig;
+  if((dig.length===12||dig.length===13)&&dig.startsWith('55')) return dig;   // já veio com DDI
+  return null; }
 function gerarCorpoEmailRenov(c){
   const sis=new Set(c.sistemas||[]);
   const venc=fmtDataLongoRenov(c.vencimento||'');
