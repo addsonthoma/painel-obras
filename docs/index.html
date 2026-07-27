@@ -92,6 +92,7 @@
     <div id="mod-obras" class="modulo-view">
     <nav class="abas" id="abas">
       <button class="aba ativa" data-aba="obras">Obras</button>
+      <button class="aba" data-aba="agenda">📅 Agenda</button>
       <button class="aba" data-aba="pendencias">Pendências <span class="badge-num" id="num-pend"></span></button>
       <button class="aba so-admin" data-aba="cobrancas">Cobranças <span class="badge-num" id="num-cob"></span></button>
       <button class="aba so-admin" data-aba="resultados">Resultados</button>
@@ -110,6 +111,30 @@
         </div>
         <div id="lista-obras" class="lista-obras"></div>
         <div id="obras-vazio" class="vazio hidden">Nenhuma obra por aqui ainda.</div>
+      </section>
+
+      <!-- ABA AGENDA -->
+      <section id="view-agenda" class="view hidden">
+        <div class="ag-topo">
+          <div class="ag-nav">
+            <button class="btn btn-ghost btn-sm" id="ag-prev" title="Anterior">‹</button>
+            <button class="btn btn-ghost btn-sm" id="ag-hoje">Hoje</button>
+            <button class="btn btn-ghost btn-sm" id="ag-next" title="Próximo">›</button>
+            <strong id="ag-titulo"></strong>
+          </div>
+          <div class="ag-modo" id="ag-modo">
+            <button data-modo="semana" class="ativa">Semana</button>
+            <button data-modo="mes">Mês</button>
+          </div>
+        </div>
+        <div class="ag-wrap">
+          <aside class="ag-pool">
+            <h3>A agendar <span class="badge-num" id="ag-pool-num"></span></h3>
+            <p class="ag-dica so-admin">Arraste para um dia — ou use o 📅 no card.</p>
+            <div id="ag-lista-pool"></div>
+          </aside>
+          <div id="ag-grade"></div>
+        </div>
       </section>
 
       <!-- ABA PENDÊNCIAS -->

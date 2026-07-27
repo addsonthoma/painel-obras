@@ -42,6 +42,7 @@ const state = {
   obras:[], equipe:[], financeiro:{}, monitor:[], orcamentos:[], orcErro:null,
   renovacoes:[], renovErro:null, buscaRenov:'', fRenovDias:'', fRenovStatus:'', fRenovEmail:'',
   metaCobranca:100000,
+  agenda:[], agendaErro:null, agRef:new Date(), agModo:'semana',
   modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
   abaOrc:'pendente', filtroOrc:'todos', buscaOrc:'',
   modalAberto:false,
@@ -201,6 +202,9 @@ async function carregarTudo(silencioso){
   state.obras = obras||[];
   const { data:eq } = await sb.from('equipe').select('*').order('nome');
   state.equipe = eq||[];
+  const { data:ag, error:ea } = await sb.from('obra_agenda').select('*').order('data');
+  if(ea){ state.agendaErro = ea.message; state.agenda = []; }
+  else { state.agendaErro = null; state.agenda = ag||[]; }
   if(state.isAdmin){
     const { data:fin } = await sb.from('obra_financeiro').select('*');
     state.financeiro = {}; (fin||[]).forEach(f=> state.financeiro[f.obra_id]=f);
@@ -285,12 +289,12 @@ $('#modal-fundo').addEventListener('click', e=>{ if(e.target.id==='modal-fundo')
 /* =====================================================================
    RENDER
    ===================================================================== */
-function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias();
+function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias(); renderAgenda();
   if(state.isAdmin){ renderCobrancas(); renderEquipe(); renderRenovacoes(); renderPainelObras(); renderMetaCobranca(); renderResultados(); }
   if(state.isComercial) renderOrcamentos(); }
 
 function renderContadores(){
-  const pend = state.obras.filter(o=>o.status_execucao==='pendente_material').length;
+  const pend = state.obras.filter(temPendencia).length;
   $('#num-pend').textContent = pend||'';
   if(state.isAdmin){
     const cob = state.obras.filter(o=>{ const f=state.financeiro[o.id]; return f && (f.status_cobranca==='a_cobrar'||f.status_cobranca==='cobranca_enviada'); }).length;
@@ -355,9 +359,19 @@ function renderObras(){
   ligarCards('#lista-obras');
 }
 
+/* obras que precisam de compra: status pendente_material OU com item marcado como faltando na agenda */
+function itensFaltando(o){ return (o.obra_itens||[]).filter(i=>i.faltando); }
+function temPendencia(o){ return o.status_execucao==='pendente_material' || itensFaltando(o).length>0; }
+
 function renderPendencias(){
-  const arr=ordenarUrgencia(state.obras.filter(o=>o.status_execucao==='pendente_material'));
-  $('#lista-pendencias').innerHTML = arr.map(o=>cardObra(o, o.pendencia_obs?`<div class="nota">📦 ${esc(o.pendencia_obs)}</div>`:'')).join('');
+  const arr=ordenarUrgencia(state.obras.filter(temPendencia));
+  $('#lista-pendencias').innerHTML = arr.map(o=>{
+    const falt=itensFaltando(o);
+    let extra = o.pendencia_obs?`<div class="nota">📦 ${esc(o.pendencia_obs)}</div>`:'';
+    if(falt.length) extra += `<div class="nota falta-lista"><b>⚠ Falta comprar:</b> ${
+      falt.map(i=>`${esc(i.produto)} (${Number(i.quantidade).toLocaleString('pt-BR')}${i.unidade?' '+esc(i.unidade):''})`).join(' · ')}</div>`;
+    return cardObra(o, extra);
+  }).join('');
   $('#pend-vazio').classList.toggle('hidden', arr.length>0);
   ligarCards('#lista-pendencias');
 }
@@ -2019,6 +2033,343 @@ function renderStatsOrc(){
     document.querySelectorAll('#abas-orc .aba').forEach(a=>a.classList.toggle('ativa', a.dataset.abao===state.abaOrc));
     renderOrcamentos();
   });
+}
+
+/* =====================================================================
+   AGENDA DE OBRAS — calendário com arrastar-e-soltar
+   Cada linha de obra_agenda = uma obra marcada em UM dia, com a equipe do dia.
+   ===================================================================== */
+const DIA_SEMANA = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+const MES_NOME = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+function isoDia(d){ const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function mesmoDia(a,b){ return isoDia(a)===isoDia(b); }
+
+function diasDaVista(){
+  const dias=[];
+  if(state.agModo==='semana'){
+    const ini=inicioSemana(state.agRef);
+    for(let i=0;i<7;i++) dias.push(addDias(ini,i));
+  } else {
+    const ref=state.agRef;
+    const primeiro=new Date(ref.getFullYear(), ref.getMonth(), 1);
+    const ultimo=new Date(ref.getFullYear(), ref.getMonth()+1, 0);
+    let d=inicioSemana(primeiro);
+    const fim=addDias(inicioSemana(ultimo),6);
+    while(d<=fim){ dias.push(new Date(d)); d=addDias(d,1); }
+  }
+  return dias;
+}
+function tituloVista(){
+  if(state.agModo==='semana'){
+    const ini=inicioSemana(state.agRef), fim=addDias(ini,6);
+    const mesmoMes=ini.getMonth()===fim.getMonth();
+    return mesmoMes ? `${ini.getDate()} a ${fim.getDate()} de ${MES_NOME[ini.getMonth()]} de ${ini.getFullYear()}`
+                    : `${ddmm(ini)} a ${ddmm(fim)} de ${fim.getFullYear()}`;
+  }
+  return `${MES_NOME[state.agRef.getMonth()]} de ${state.agRef.getFullYear()}`;
+}
+function agendaDoDia(iso){ return state.agenda.filter(a=>a.data===iso); }
+/* obras ativas que ainda não têm dia marcado de hoje em diante */
+function obrasAAgendar(){
+  const hoje=isoDia(new Date());
+  const comDia=new Set(state.agenda.filter(a=>a.data>=hoje).map(a=>a.obra_id));
+  return state.obras.filter(o=>o.status_execucao!=='concluida' && !comDia.has(o.id));
+}
+
+/* ---------- navegação ---------- */
+$('#ag-prev') && $('#ag-prev').addEventListener('click', ()=>{
+  state.agRef = state.agModo==='semana' ? addDias(state.agRef,-7)
+    : new Date(state.agRef.getFullYear(), state.agRef.getMonth()-1, 1);
+  renderAgenda();
+});
+$('#ag-next') && $('#ag-next').addEventListener('click', ()=>{
+  state.agRef = state.agModo==='semana' ? addDias(state.agRef,7)
+    : new Date(state.agRef.getFullYear(), state.agRef.getMonth()+1, 1);
+  renderAgenda();
+});
+$('#ag-hoje') && $('#ag-hoje').addEventListener('click', ()=>{ state.agRef=new Date(); renderAgenda(); });
+$('#ag-modo') && $('#ag-modo').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  state.agModo=b.dataset.modo;
+  $('#ag-modo').querySelectorAll('button').forEach(x=>x.classList.toggle('ativa', x===b));
+  renderAgenda();
+});
+
+/* ---------- render ---------- */
+function renderAgenda(){
+  const grade=$('#ag-grade'); if(!grade) return;
+  if(state.agendaErro){
+    grade.innerHTML=`<div class="vazio">Agenda indisponível — rode <code>sql/migracao_agenda.sql</code> no Supabase.<br><small>${esc(state.agendaErro)}</small></div>`;
+    $('#ag-lista-pool').innerHTML=''; $('#ag-titulo').textContent=''; return;
+  }
+  $('#ag-titulo').textContent=tituloVista();
+  grade.className = state.agModo==='semana' ? 'ag-grade semana' : 'ag-grade mes';
+
+  const hoje=isoDia(new Date());
+  grade.innerHTML = diasDaVista().map(d=>{
+    const iso=isoDia(d), doDia=agendaDoDia(iso);
+    const foraDoMes = state.agModo==='mes' && d.getMonth()!==state.agRef.getMonth();
+    const fds = d.getDay()===0 || d.getDay()===6;
+    return `<div class="ag-dia${iso===hoje?' hoje':''}${foraDoMes?' fora':''}${fds?' fds':''}" data-dia="${iso}">
+      <div class="ag-dia-topo"><span class="ag-dow">${DIA_SEMANA[(d.getDay()+6)%7]}</span>
+        <span class="ag-num">${d.getDate()}</span></div>
+      <div class="ag-dia-cards">${doDia.map(cardAgendado).join('')}</div>
+    </div>`;
+  }).join('');
+
+  // pool de obras a agendar
+  const pool=obrasAAgendar();
+  $('#ag-pool-num').textContent = pool.length||'';
+  $('#ag-lista-pool').innerHTML = pool.length ? pool.map(o=>{
+    const servs=(o.obra_servicos||[]).map(s=>`<span class="chip-serv ${s.servico}">${esc(SERVICOS[s.servico]?.label||s.servico)}</span>`).join('');
+    return `<div class="ag-card pool" draggable="${state.isAdmin}" data-obra="${o.id}">
+      <div class="ag-card-nome">${esc(o.cliente)}</div>
+      ${servs?`<div class="servicos-chips">${servs}</div>`:''}
+      ${o.data_prazo?`<div class="ag-card-sub">prazo ${dataBR(o.data_prazo)}</div>`:''}
+      ${state.isAdmin?`<button class="ag-btn-data js-ag-marcar" data-obra="${o.id}" title="Marcar em um dia">📅</button>`:''}
+    </div>`;
+  }).join('') : '<div class="ag-vazio">Tudo agendado 👍</div>';
+
+  ligarAgenda();
+}
+
+function cardAgendado(a){
+  const o=state.obras.find(x=>x.id===a.obra_id);
+  if(!o) return '';
+  const servs=(o.obra_servicos||[]).map(s=>`<span class="chip-serv ${s.servico}">${esc(SERVICOS[s.servico]?.label||s.servico)}</span>`).join('');
+  const itens=o.obra_itens||[];
+  const faltando=itens.filter(i=>i.faltando).length;
+  const separados=itens.filter(i=>i.separado).length;
+  const eq=(a.equipe&&a.equipe.length)?a.equipe:(o.equipe_confirmada||[]);
+  return `<div class="ag-card ag-ok" draggable="${state.isAdmin}" data-ag="${a.id}">
+    <div class="ag-card-nome">${esc(o.cliente)}</div>
+    ${servs?`<div class="servicos-chips">${servs}</div>`:''}
+    <div class="ag-card-eq">${eq.length?'👷 '+esc(eq.join(', ')):'<span style="opacity:.6">sem equipe</span>'}</div>
+    <div class="ag-card-tags">
+      ${itens.length?`<span class="ag-tag${separados===itens.length?' ok':''}">📦 ${separados}/${itens.length}</span>`:''}
+      ${faltando?`<span class="ag-tag falta">⚠ ${faltando} falta${faltando>1?'m':''}</span>`:''}
+      ${a.observacoes?'<span class="ag-tag">📝</span>':''}
+    </div>
+  </div>`;
+}
+
+function ligarAgenda(){
+  // abrir a ficha do dia
+  document.querySelectorAll('#ag-grade .ag-card[data-ag]').forEach(c=>{
+    c.addEventListener('click', ()=>abrirAgendamento(c.dataset.ag));
+    c.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain','ag:'+c.dataset.ag); c.classList.add('arrastando'); });
+    c.addEventListener('dragend', ()=>c.classList.remove('arrastando'));
+  });
+  // arrastar obra do pool
+  document.querySelectorAll('#ag-lista-pool .ag-card[data-obra]').forEach(c=>{
+    c.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain','obra:'+c.dataset.obra); c.classList.add('arrastando'); });
+    c.addEventListener('dragend', ()=>c.classList.remove('arrastando'));
+    c.querySelector('.js-ag-marcar')?.addEventListener('click', ev=>{ ev.stopPropagation(); modalMarcarDia(c.dataset.obra); });
+  });
+  // dias como alvo
+  if(!state.isAdmin) return;
+  document.querySelectorAll('#ag-grade .ag-dia').forEach(cel=>{
+    cel.addEventListener('dragover', e=>{ e.preventDefault(); cel.classList.add('drop-alvo'); });
+    cel.addEventListener('dragleave', ()=>cel.classList.remove('drop-alvo'));
+    cel.addEventListener('drop', async e=>{
+      e.preventDefault(); cel.classList.remove('drop-alvo');
+      const dado=e.dataTransfer.getData('text/plain')||'';
+      const dia=cel.dataset.dia;
+      if(dado.startsWith('obra:')) await agendarObra(dado.slice(5), dia);
+      else if(dado.startsWith('ag:')) await moverAgendamento(dado.slice(3), dia);
+    });
+  });
+}
+
+/* ---------- ações ---------- */
+async function agendarObra(obraId, dia){
+  const o=state.obras.find(x=>x.id===obraId); if(!o) return;
+  // equipe do dia: a confirmada da obra; se não houver, a sugestão do motor
+  let equipe=(o.equipe_confirmada&&o.equipe_confirmada.length)?o.equipe_confirmada:[];
+  if(!equipe.length){ equipe=sugerirEquipe((o.obra_servicos||[]).map(s=>s.servico), o.tem_skid).equipe; }
+  const { error }=await sb.from('obra_agenda').insert({ obra_id:obraId, data:dia, equipe });
+  if(error){
+    if((error.message||'').includes('duplicate')) toast('Essa obra já está marcada nesse dia.',true);
+    else toast(error.message,true);
+    return;
+  }
+  await logar(obraId,'agenda','Agendada para '+dataBR(dia));
+  await carregarTudo(true); toast(`${o.cliente} marcada em ${dataBR(dia)} ✓`);
+}
+async function moverAgendamento(agId, dia){
+  const a=state.agenda.find(x=>x.id===agId); if(!a || a.data===dia) return;
+  const { error }=await sb.from('obra_agenda').update({ data:dia }).eq('id',agId);
+  if(error){
+    if((error.message||'').includes('duplicate')) toast('Já existe essa obra nesse dia.',true);
+    else toast(error.message,true);
+    return;
+  }
+  await logar(a.obra_id,'agenda','Movida para '+dataBR(dia));
+  await carregarTudo(true); toast('Movida para '+dataBR(dia));
+}
+function modalMarcarDia(obraId){
+  const o=state.obras.find(x=>x.id===obraId); if(!o) return;
+  abrirModal(`<h2>Marcar no dia</h2>
+    <p class="det-sub">${esc(o.cliente)}</p>
+    <label class="campo">Dia<input type="date" id="md-data" value="${isoDia(new Date())}"></label>
+    <div class="form-acoes"><button class="btn btn-ghost" id="md-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="md-ok">Marcar</button></div>`);
+  $('#md-cancel').onclick=fecharModal;
+  $('#md-ok').onclick=async()=>{ const d=$('#md-data').value; if(!d){ toast('Escolha o dia.',true); return; }
+    fecharModal(); await agendarObra(obraId, d); };
+}
+
+/* ---------- ficha do dia (materiais, anexos, observações) ---------- */
+function abrirAgendamento(agId){
+  const a=state.agenda.find(x=>x.id===agId); if(!a) return;
+  const o=state.obras.find(x=>x.id===a.obra_id); if(!o) return;
+  const itens=(o.obra_itens||[]).slice().sort((x,y)=>(x.ordem||0)-(y.ordem||0));
+  const eq=(a.equipe&&a.equipe.length)?a.equipe:(o.equipe_confirmada||[]);
+  const servs=(o.obra_servicos||[]).map(s=>`<span class="chip-serv ${s.servico}">${esc(SERVICOS[s.servico]?.label||s.servico)}</span>`).join('');
+
+  let html=`<h2>${esc(o.cliente)}</h2>
+    <div class="det-sub">📅 ${dataBR(a.data)} ${o.endereco?'· '+esc(o.endereco):''}</div>
+    ${servs?`<div class="servicos-chips" style="margin-top:8px">${servs}</div>`:''}`;
+
+  // equipe do dia
+  html+=`<div class="det-sec"><h3>Equipe do dia</h3>
+    <div class="det-linha"><span class="lbl">Definida</span><b id="ag-eq-txt">${eq.length?esc(eq.join(', ')):'—'}</b></div>
+    ${state.isAdmin?`<div class="acoes-status"><button class="btn btn-sec btn-sm" id="ag-edit-eq">👷 Editar equipe do dia</button></div>`:''}</div>`;
+
+  // materiais
+  html+=`<div class="det-sec"><h3>Materiais <small>(marque o que já foi separado)</small></h3>
+    <div id="ag-materiais"></div>
+    ${itens.length?`<div class="acoes-status" style="margin-top:8px">
+      <button class="btn btn-sec btn-sm" id="ag-print">🖨 Folha de separação</button></div>`:''}</div>`;
+
+  // projeto + anexos
+  html+=`<div class="det-sec"><h3>Projeto e anexos</h3>
+    ${o.projeto_pdf_path?`<button class="btn btn-sec btn-sm" id="ag-ver-pdf">📄 Ver projeto (PDF)</button>`:'<span class="card-end">Sem projeto anexado. </span>'}
+    <div id="ag-anexos" style="margin-top:8px">carregando…</div></div>`;
+
+  // observações
+  html+=`<div class="det-sec"><h3>Observações do dia</h3>
+    <div class="obs-box" id="ag-obs-dia">${a.observacoes?esc(a.observacoes):'<span class="card-end">Sem observações para este dia.</span>'}</div>
+    ${state.isAdmin?`<button class="btn btn-sec btn-sm" id="ag-edit-obs" style="margin-top:8px">✏️ Editar observações do dia</button>`:''}
+    <h3 style="margin-top:14px">Observações da obra</h3>
+    <div class="obs-box" id="ag-obs-obra">${o.observacoes?esc(o.observacoes):'<span class="card-end">Sem observações.</span>'}</div>
+    ${state.isAdmin?`<button class="btn btn-sec btn-sm" id="ag-edit-obs-obra" style="margin-top:8px">✏️ Editar observações da obra</button>`:''}</div>`;
+
+  if(state.isAdmin){
+    html+=`<div class="form-acoes"><button class="btn btn-ghost" id="ag-remover">Tirar deste dia</button>
+      <button class="btn btn-sec" id="ag-mover">📅 Mudar de dia</button>
+      <button class="btn btn-sec" id="ag-abrir-obra">Abrir obra completa</button></div>`;
+  }
+  abrirModal(html);
+  renderMateriaisAgenda(o.id);
+  carregarAnexosAg(o.id);
+  $('#ag-print') && ($('#ag-print').onclick=()=>imprimirMateriais(o.id));
+  $('#ag-ver-pdf') && ($('#ag-ver-pdf').onclick=()=>verPDF(o));
+  $('#ag-edit-eq') && ($('#ag-edit-eq').onclick=()=>editarEquipeDia(a,o));
+  $('#ag-edit-obs') && ($('#ag-edit-obs').onclick=()=>editarObsDia(a));
+  $('#ag-edit-obs-obra') && ($('#ag-edit-obs-obra').onclick=()=>editarObsObraNaAgenda(a,o));
+  $('#ag-abrir-obra') && ($('#ag-abrir-obra').onclick=()=>abrirObra(o.id));
+  $('#ag-mover') && ($('#ag-mover').onclick=()=>{
+    const d=prompt('Novo dia (AAAA-MM-DD):', a.data); if(!d) return;
+    fecharModal(); moverAgendamento(a.id, d.trim());
+  });
+  $('#ag-remover') && ($('#ag-remover').onclick=async()=>{
+    if(!confirm(`Tirar "${o.cliente}" do dia ${dataBR(a.data)}?`)) return;
+    const { error }=await sb.from('obra_agenda').delete().eq('id',a.id);
+    if(error){ toast(error.message,true); return; }
+    fecharModal(); await carregarTudo(true); toast('Removida do dia.');
+  });
+}
+
+/* checklist de materiais — separado / falta */
+function renderMateriaisAgenda(obraId){
+  const el=$('#ag-materiais'); if(!el) return;
+  const o=state.obras.find(x=>x.id===obraId);
+  const itens=(o?.obra_itens||[]).slice().sort((a,b)=>(a.ordem||0)-(b.ordem||0));
+  if(!itens.length){ el.innerHTML='<span class="card-end">Nenhum material cadastrado nesta obra.</span>'; return; }
+  const sep=itens.filter(i=>i.separado).length, falt=itens.filter(i=>i.faltando).length;
+  el.innerHTML=`<div class="mat-resumo">${sep} de ${itens.length} separados${falt?` · <b class="mat-falta-txt">${falt} faltando</b>`:''}</div>`+
+    itens.map(it=>`<div class="mat-row${it.separado?' ok':''}${it.faltando?' falta':''}" data-id="${it.id}">
+      <label class="mat-check"><input type="checkbox" class="js-mat-sep" ${it.separado?'checked':''}>
+        <span class="mat-nome">${esc(it.produto)}</span></label>
+      <span class="mat-qtd">${Number(it.quantidade).toLocaleString('pt-BR')}${it.unidade?' '+esc(it.unidade):''}</span>
+      <button class="mat-btn-falta js-mat-falta" title="Marcar/desmarcar falta">${it.faltando?'⚠ falta':'falta?'}</button>
+    </div>`).join('');
+  el.querySelectorAll('.mat-row').forEach(row=>{
+    const id=row.dataset.id;
+    row.querySelector('.js-mat-sep').onchange=e=>marcarMaterial(obraId,id,{separado:e.target.checked});
+    row.querySelector('.js-mat-falta').onclick=()=>{
+      const it=(state.obras.find(x=>x.id===obraId).obra_itens||[]).find(i=>i.id===id);
+      marcarMaterial(obraId,id,{faltando:!it.faltando});
+    };
+  });
+}
+async function marcarMaterial(obraId, itemId, campos){
+  const { error }=await sb.from('obra_itens').update(campos).eq('id',itemId);
+  if(error){ toast('Não consegui salvar — rode sql/migracao_agenda.sql. ('+error.message+')',true); return; }
+  // atualiza o estado local e redesenha só a lista (sem fechar o modal)
+  const o=state.obras.find(x=>x.id===obraId);
+  const it=(o?.obra_itens||[]).find(i=>i.id===itemId);
+  if(it) Object.assign(it,campos);
+  renderMateriaisAgenda(obraId);
+  renderPendencias(); renderContadores(); renderAgenda();
+  if(campos.faltando===true){ toast('⚠ Marcado como FALTANDO — foi para as Pendências.'); await logar(obraId,'material','Falta: '+(it?.produto||'')); }
+}
+
+async function carregarAnexosAg(obraId){
+  const el=$('#ag-anexos'); if(!el) return;
+  const { data, error }=await sb.from('obra_anexos').select('*').eq('obra_id',obraId).order('criado_em');
+  if(error){ el.innerHTML='<span class="card-end">Anexos indisponíveis.</span>'; return; }
+  if(!data||!data.length){ el.innerHTML='<span class="card-end">Nenhum anexo.</span>'; return; }
+  el.innerHTML=data.map(x=>`<div class="anexo-item"><a href="#" class="js-ag-anexo" data-p="${esc(x.path)}">📄 ${esc(x.nome)}</a></div>`).join('');
+  el.querySelectorAll('.js-ag-anexo').forEach(x=>x.onclick=ev=>{ ev.preventDefault(); verAnexo(x.dataset.p); });
+}
+
+function editarEquipeDia(a,o){
+  const atual=new Set((a.equipe&&a.equipe.length)?a.equipe:(o.equipe_confirmada||[]));
+  const chips=state.equipe.filter(e=>e.ativo).map(e=>`<button type="button" class="pessoa-chip ${atual.has(e.nome)?'sel':''} ${e.coringa?'coringa':''}" data-n="${esc(e.nome)}">${esc(e.nome)}${e.parceiro?' ⚙':''}${e.coringa?' ★':''}</button>`).join('');
+  const sug=sugerirEquipe((o.obra_servicos||[]).map(s=>s.servico), o.tem_skid);
+  abrirModal(`<h2>Equipe de ${dataBR(a.data)}</h2><p class="det-sub">${esc(o.cliente)} — clique para incluir/remover.</p>
+    <div class="equipe-pick" id="agq">${chips}</div>
+    ${sug.equipe.length?`<div class="nota">Sugestão do sistema: ${esc(sug.equipe.join(', '))}</div>`:''}
+    ${sug.notas.map(n=>`<div class="nota ${n.tipo==='skid'?'skid':''}">${esc(n.texto)}</div>`).join('')}
+    <div class="form-acoes"><button class="btn btn-ghost" id="agq-volta">Voltar</button>
+      <button class="btn btn-sec" id="agq-sug">✨ Usar sugestão</button>
+      <button class="btn btn-primary" id="agq-salva">Salvar</button></div>`);
+  $('#agq').querySelectorAll('.pessoa-chip').forEach(c=>c.onclick=()=>c.classList.toggle('sel'));
+  $('#agq-volta').onclick=()=>abrirAgendamento(a.id);
+  $('#agq-sug').onclick=()=>{ const s=new Set(sug.equipe); $('#agq').querySelectorAll('.pessoa-chip').forEach(c=>c.classList.toggle('sel', s.has(c.dataset.n))); };
+  $('#agq-salva').onclick=async()=>{
+    const sel=[...$('#agq').querySelectorAll('.sel')].map(c=>c.dataset.n);
+    const { error }=await sb.from('obra_agenda').update({ equipe:sel }).eq('id',a.id);
+    if(error){ toast(error.message,true); return; }
+    await logar(o.id,'agenda',`Equipe de ${dataBR(a.data)}: ${sel.join(', ')||'(vazia)'}`);
+    await carregarTudo(true); abrirAgendamento(a.id); toast('Equipe do dia salva.');
+  };
+}
+function editarObsDia(a){
+  abrirModal(`<h2>Observações de ${dataBR(a.data)}</h2>
+    <textarea id="ago-area" class="campo" style="width:100%;min-height:140px;font-family:inherit" placeholder="Ex.: levar andaime; cliente libera às 8h; portaria pede lista de nomes…">${esc(a.observacoes||'')}</textarea>
+    <div class="form-acoes"><button class="btn btn-ghost" id="ago-volta">Voltar</button>
+      <button class="btn btn-primary" id="ago-salva">Salvar</button></div>`);
+  $('#ago-volta').onclick=()=>abrirAgendamento(a.id);
+  $('#ago-salva').onclick=async()=>{
+    const { error }=await sb.from('obra_agenda').update({ observacoes:$('#ago-area').value.trim()||null }).eq('id',a.id);
+    if(error){ toast(error.message,true); return; }
+    await carregarTudo(true); abrirAgendamento(a.id); toast('Observações do dia salvas.');
+  };
+}
+function editarObsObraNaAgenda(a,o){
+  abrirModal(`<h2>Observações da obra</h2><p class="det-sub">${esc(o.cliente)} — vale para todos os dias.</p>
+    <textarea id="agoo-area" class="campo" style="width:100%;min-height:140px;font-family:inherit">${esc(o.observacoes||'')}</textarea>
+    <div class="form-acoes"><button class="btn btn-ghost" id="agoo-volta">Voltar</button>
+      <button class="btn btn-primary" id="agoo-salva">Salvar</button></div>`);
+  $('#agoo-volta').onclick=()=>abrirAgendamento(a.id);
+  $('#agoo-salva').onclick=async()=>{
+    if(await salvarCampos(o.id,{observacoes:$('#agoo-area').value.trim()||null})){
+      await logar(o.id,'observações','Editou pela agenda'); abrirAgendamento(a.id); toast('Observações salvas.');
+    }
+  };
 }
 
 /* ---------- start ---------- */

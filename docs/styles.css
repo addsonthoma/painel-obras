@@ -204,6 +204,83 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .btn-wa:hover{background:#1fae57}
 .btn-wa svg{width:16px; height:16px}
 
+/* ---- agenda de obras (calendário) ---- */
+.ag-topo{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px}
+.ag-nav{display:flex; align-items:center; gap:6px}
+.ag-nav strong{margin-left:8px; font-size:1.05rem; text-transform:capitalize}
+.ag-modo{display:inline-flex; gap:2px; background:#eef1f6; border-radius:11px; padding:3px; margin-left:auto}
+.ag-modo button{border:0; background:transparent; padding:6px 13px; border-radius:8px; cursor:pointer;
+  font-weight:600; font-size:.86rem; color:var(--tinta-suave)}
+.ag-modo button.ativa{background:#fff; color:var(--marca); box-shadow:0 1px 4px rgba(20,24,40,.15)}
+.ag-wrap{display:grid; grid-template-columns:250px 1fr; gap:16px; align-items:start}
+.ag-pool{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:14px; position:sticky; top:130px}
+.ag-pool h3{margin:0 0 4px; font-size:.95rem; display:flex; align-items:center; gap:6px}
+.ag-pool h3 .badge-num{background:var(--marca); color:#fff}
+.ag-dica{font-size:.75rem; color:var(--tinta-suave); margin:0 0 10px}
+.ag-vazio{font-size:.85rem; color:var(--tinta-suave); padding:14px 0; text-align:center}
+
+.ag-grade{display:grid; gap:8px}
+.ag-grade.semana{grid-template-columns:repeat(7,1fr)}
+.ag-grade.mes{grid-template-columns:repeat(7,1fr)}
+.ag-dia{background:var(--card); border:1px solid var(--linha); border-radius:12px; padding:8px; min-height:132px;
+  display:flex; flex-direction:column; gap:6px; transition:background .12s, border-color .12s}
+.ag-grade.mes .ag-dia{min-height:104px}
+.ag-dia.fds{background:#fafbfd}
+.ag-dia.fora{opacity:.45}
+.ag-dia.hoje{border-color:var(--marca); box-shadow:0 0 0 2px rgba(232,74,86,.14)}
+.ag-dia.drop-alvo{background:#fdeef0; border-color:var(--marca); border-style:dashed}
+.ag-dia-topo{display:flex; align-items:baseline; justify-content:space-between}
+.ag-dow{font-size:.7rem; font-weight:700; color:var(--tinta-suave); text-transform:uppercase; letter-spacing:.04em}
+.ag-num{font-size:1rem; font-weight:700}
+.ag-dia.hoje .ag-num{color:var(--marca)}
+.ag-dia-cards{display:flex; flex-direction:column; gap:5px}
+
+.ag-card{background:#fff; border:1px solid var(--linha); border-left:4px solid var(--marca); border-radius:9px;
+  padding:7px 9px; cursor:grab; position:relative; transition:transform .12s, box-shadow .12s}
+.ag-card:hover{transform:translateY(-2px); box-shadow:var(--sombra)}
+.ag-card.arrastando{opacity:.45; cursor:grabbing}
+.ag-card.pool{margin-bottom:7px; border-left-color:#aeb6c4; padding-right:34px}
+.ag-card-nome{font-weight:700; font-size:.83rem; line-height:1.25}
+.ag-card-sub{font-size:.72rem; color:var(--tinta-suave); margin-top:2px}
+.ag-card-eq{font-size:.73rem; color:var(--tinta-suave); margin-top:3px}
+.ag-card .servicos-chips{margin-top:4px}
+.ag-card .chip-serv{font-size:.63rem; padding:1px 6px}
+.ag-card-tags{display:flex; gap:4px; flex-wrap:wrap; margin-top:5px}
+.ag-tag{font-size:.68rem; font-weight:700; background:#eef1f6; color:var(--tinta-suave); padding:1px 7px; border-radius:20px}
+.ag-tag.ok{background:var(--ok-bg); color:var(--ok)}
+.ag-tag.falta{background:var(--perigo-bg); color:var(--perigo)}
+.ag-btn-data{position:absolute; top:6px; right:6px; border:0; background:#eef1f6; border-radius:7px;
+  padding:3px 6px; cursor:pointer; font-size:.8rem; line-height:1}
+.ag-btn-data:hover{background:var(--marca); }
+
+/* checklist de materiais (ficha do dia) */
+.mat-resumo{font-size:.82rem; color:var(--tinta-suave); margin-bottom:8px}
+.mat-falta-txt{color:var(--perigo)}
+.mat-row{display:flex; align-items:center; gap:10px; padding:7px 9px; border:1px solid var(--linha);
+  border-radius:9px; margin-bottom:5px; background:#fff}
+.mat-row.ok{background:var(--ok-bg); border-color:#cfe9db}
+.mat-row.falta{background:var(--perigo-bg); border-color:#f4cccc}
+.mat-check{display:flex; align-items:center; gap:8px; flex:1; cursor:pointer; min-width:0}
+.mat-check input{width:17px; height:17px; flex-shrink:0; accent-color:var(--ok)}
+.mat-nome{font-size:.86rem; line-height:1.25}
+.mat-row.ok .mat-nome{text-decoration:line-through; opacity:.65}
+.mat-qtd{font-size:.8rem; font-weight:700; white-space:nowrap; font-variant-numeric:tabular-nums}
+.mat-btn-falta{border:1px solid var(--linha); background:#fff; color:var(--tinta-suave); border-radius:20px;
+  padding:3px 10px; font-size:.72rem; font-weight:700; cursor:pointer; white-space:nowrap}
+.mat-btn-falta:hover{border-color:var(--perigo); color:var(--perigo)}
+.mat-row.falta .mat-btn-falta{background:var(--perigo); color:#fff; border-color:var(--perigo)}
+.nota.falta-lista{background:var(--perigo-bg); color:#7a1f1f}
+
+@media (max-width:900px){
+  .ag-wrap{grid-template-columns:1fr}
+  .ag-pool{position:static}
+  .ag-grade.semana{grid-template-columns:1fr; }
+  .ag-grade.semana .ag-dia{min-height:auto}
+  .ag-grade.mes{gap:4px}
+  .ag-grade.mes .ag-dia{min-height:78px; padding:5px}
+  .ag-grade.mes .ag-card-eq,.ag-grade.mes .servicos-chips{display:none}
+}
+
 /* ---- metas, medidores e KPIs ---- */
 .meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
 .meta-box.compacto{padding:15px 18px}
