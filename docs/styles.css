@@ -217,6 +217,9 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .ag-pool h3{margin:0 0 4px; font-size:.95rem; display:flex; align-items:center; gap:6px}
 .ag-pool h3 .badge-num{background:var(--marca); color:#fff}
 .ag-dica{font-size:.75rem; color:var(--tinta-suave); margin:0 0 10px}
+#ag-busca{width:100%; padding:8px 11px; border:1px solid var(--linha); border-radius:9px;
+  font-size:.88rem; margin:8px 0 6px}
+#ag-busca:focus{outline:2px solid var(--marca); border-color:transparent}
 .ag-vazio{font-size:.85rem; color:var(--tinta-suave); padding:14px 0; text-align:center}
 
 .ag-grade{display:grid; gap:8px}
@@ -251,7 +254,21 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .ag-tag.falta{background:var(--perigo-bg); color:var(--perigo)}
 .ag-btn-data{position:absolute; top:6px; right:6px; border:0; background:#eef1f6; border-radius:7px;
   padding:3px 6px; cursor:pointer; font-size:.8rem; line-height:1}
-.ag-btn-data:hover{background:var(--marca); }
+.ag-btn-data:hover{background:#dfe4ee}
+/* ações rápidas no card do dia: repetir (⧉) e tirar do dia (✕) */
+.ag-card-acoes{position:absolute; top:4px; right:4px; display:flex; gap:2px; opacity:0; transition:opacity .12s}
+.ag-card:hover .ag-card-acoes,.ag-card:focus-within .ag-card-acoes{opacity:1}
+.ag-mini{border:0; background:#eef1f6; color:var(--tinta-suave); border-radius:6px; width:20px; height:20px;
+  line-height:1; font-size:.72rem; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0}
+.ag-mini:hover{background:#dfe4ee; color:var(--tinta)}
+.ag-mini.js-ag-x:hover{background:var(--perigo); color:#fff}
+.ag-card.ag-ok{padding-right:9px}
+/* em telas de toque não há hover: botões sempre visíveis e o nome
+   ganha recuo para eles não cobrirem o texto */
+@media (hover:none){
+  .ag-card-acoes{opacity:1}
+  .ag-card.ag-ok .ag-card-nome{padding-right:46px}
+}
 
 /* checklist de materiais (ficha do dia) */
 .mat-resumo{font-size:.82rem; color:var(--tinta-suave); margin-bottom:8px}

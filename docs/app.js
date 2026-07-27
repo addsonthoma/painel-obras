@@ -42,7 +42,7 @@ const state = {
   obras:[], equipe:[], financeiro:{}, monitor:[], orcamentos:[], orcErro:null,
   renovacoes:[], renovErro:null, buscaRenov:'', fRenovDias:'', fRenovStatus:'', fRenovEmail:'',
   metaCobranca:100000,
-  agenda:[], agendaErro:null, agRef:new Date(), agModo:'semana',
+  agenda:[], agendaErro:null, agRef:new Date(), agModo:'semana', buscaAg:'',
   modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
   abaOrc:'pendente', filtroOrc:'todos', buscaOrc:'',
   modalAberto:false,
@@ -2069,11 +2069,25 @@ function tituloVista(){
   return `${MES_NOME[state.agRef.getMonth()]} de ${state.agRef.getFullYear()}`;
 }
 function agendaDoDia(iso){ return state.agenda.filter(a=>a.data===iso); }
-/* obras ativas que ainda não têm dia marcado de hoje em diante */
+/* obras ativas que ainda não têm dia marcado de hoje em diante (com busca, mais urgentes primeiro) */
 function obrasAAgendar(){
   const hoje=isoDia(new Date());
   const comDia=new Set(state.agenda.filter(a=>a.data>=hoje).map(a=>a.obra_id));
-  return state.obras.filter(o=>o.status_execucao!=='concluida' && !comDia.has(o.id));
+  let arr=state.obras.filter(o=>o.status_execucao!=='concluida' && !comDia.has(o.id));
+  const q=(state.buscaAg||'').trim().toLowerCase();
+  if(q) arr=arr.filter(o=>(o.cliente+' '+(o.endereco||'')+' '+(o.orcamento_qs||'')+' '+
+    (o.obra_servicos||[]).map(s=>SERVICOS[s.servico]?.label||s.servico).join(' ')).toLowerCase().includes(q));
+  return ordenarUrgencia(arr);
+}
+/* próximos N dias a partir de uma data (opcionalmente pulando sábado/domingo) */
+function proximosDias(dataIso, n, pularFds){
+  const dias=[]; let d=new Date(dataIso+'T00:00:00'); let guarda=0;
+  while(dias.length<n && guarda++<200){
+    d=addDias(d,1);
+    if(pularFds && (d.getDay()===0||d.getDay()===6)) continue;
+    dias.push(isoDia(d));
+  }
+  return dias;
 }
 
 /* ---------- navegação ---------- */
@@ -2088,6 +2102,7 @@ $('#ag-next') && $('#ag-next').addEventListener('click', ()=>{
   renderAgenda();
 });
 $('#ag-hoje') && $('#ag-hoje').addEventListener('click', ()=>{ state.agRef=new Date(); renderAgenda(); });
+$('#ag-busca') && $('#ag-busca').addEventListener('input', e=>{ state.buscaAg=e.target.value; renderAgenda(); });
 $('#ag-modo') && $('#ag-modo').addEventListener('click', e=>{
   const b=e.target.closest('button'); if(!b) return;
   state.agModo=b.dataset.modo;
@@ -2142,6 +2157,9 @@ function cardAgendado(a){
   const separados=itens.filter(i=>i.separado).length;
   const eq=(a.equipe&&a.equipe.length)?a.equipe:(o.equipe_confirmada||[]);
   return `<div class="ag-card ag-ok" draggable="${state.isAdmin}" data-ag="${a.id}">
+    ${state.isAdmin?`<div class="ag-card-acoes">
+      <button class="ag-mini js-ag-rep" title="Repetir em mais dias">⧉</button>
+      <button class="ag-mini js-ag-x" title="Tirar deste dia">✕</button></div>`:''}
     <div class="ag-card-nome">${esc(o.cliente)}</div>
     ${servs?`<div class="servicos-chips">${servs}</div>`:''}
     <div class="ag-card-eq">${eq.length?'👷 '+esc(eq.join(', ')):'<span style="opacity:.6">sem equipe</span>'}</div>
@@ -2159,6 +2177,8 @@ function ligarAgenda(){
     c.addEventListener('click', ()=>abrirAgendamento(c.dataset.ag));
     c.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain','ag:'+c.dataset.ag); c.classList.add('arrastando'); });
     c.addEventListener('dragend', ()=>c.classList.remove('arrastando'));
+    c.querySelector('.js-ag-x')?.addEventListener('click', ev=>{ ev.stopPropagation(); tirarDoDia(c.dataset.ag); });
+    c.querySelector('.js-ag-rep')?.addEventListener('click', ev=>{ ev.stopPropagation(); modalRepetir(c.dataset.ag); });
   });
   // arrastar obra do pool
   document.querySelectorAll('#ag-lista-pool .ag-card[data-obra]').forEach(c=>{
@@ -2182,19 +2202,60 @@ function ligarAgenda(){
 }
 
 /* ---------- ações ---------- */
-async function agendarObra(obraId, dia){
+async function agendarObra(obraId, dia, extras=0, pularFds=true){
   const o=state.obras.find(x=>x.id===obraId); if(!o) return;
   // equipe do dia: a confirmada da obra; se não houver, a sugestão do motor
   let equipe=(o.equipe_confirmada&&o.equipe_confirmada.length)?o.equipe_confirmada:[];
   if(!equipe.length){ equipe=sugerirEquipe((o.obra_servicos||[]).map(s=>s.servico), o.tem_skid).equipe; }
-  const { error }=await sb.from('obra_agenda').insert({ obra_id:obraId, data:dia, equipe });
-  if(error){
-    if((error.message||'').includes('duplicate')) toast('Essa obra já está marcada nesse dia.',true);
-    else toast(error.message,true);
-    return;
-  }
-  await logar(obraId,'agenda','Agendada para '+dataBR(dia));
-  await carregarTudo(true); toast(`${o.cliente} marcada em ${dataBR(dia)} ✓`);
+  const dias=[dia, ...proximosDias(dia, extras, pularFds)];
+  const linhas=dias.map(d=>({ obra_id:obraId, data:d, equipe }));
+  // ignoreDuplicates: se já existir naquele dia, não quebra nem duplica
+  const { error }=await sb.from('obra_agenda').upsert(linhas, { onConflict:'obra_id,data', ignoreDuplicates:true });
+  if(error){ toast(error.message,true); return; }
+  await logar(obraId,'agenda', dias.length>1 ? `Agendada em ${dias.length} dias (${dataBR(dias[0])} a ${dataBR(dias[dias.length-1])})` : 'Agendada para '+dataBR(dia));
+  await carregarTudo(true);
+  toast(dias.length>1 ? `${o.cliente} marcada em ${dias.length} dias ✓` : `${o.cliente} marcada em ${dataBR(dia)} ✓`);
+}
+async function tirarDoDia(agId){
+  const a=state.agenda.find(x=>x.id===agId); if(!a) return;
+  const o=state.obras.find(x=>x.id===a.obra_id);
+  if(!confirm(`Tirar "${o?.cliente||'esta obra'}" do dia ${dataBR(a.data)}?`)) return;
+  const { error }=await sb.from('obra_agenda').delete().eq('id',agId);
+  if(error){ toast(error.message,true); return; }
+  await carregarTudo(true); toast('Tirada do dia.');
+}
+/* repete a MESMA obra (com a equipe e o recado do dia) nos próximos dias */
+async function repetirAgendamento(a, n, pularFds){
+  const dias=proximosDias(a.data, n, pularFds);
+  if(!dias.length) return;
+  const linhas=dias.map(d=>({ obra_id:a.obra_id, data:d, equipe:a.equipe||[], observacoes:a.observacoes||null }));
+  const { error }=await sb.from('obra_agenda').upsert(linhas, { onConflict:'obra_id,data', ignoreDuplicates:true });
+  if(error){ toast(error.message,true); return; }
+  await logar(a.obra_id,'agenda',`Repetida em mais ${dias.length} dia(s)`);
+  await carregarTudo(true); toast(`Marcada em mais ${dias.length} dia(s) ✓`);
+}
+function modalRepetir(agId){
+  const a=state.agenda.find(x=>x.id===agId); if(!a) return;
+  const o=state.obras.find(x=>x.id===a.obra_id);
+  abrirModal(`<h2>Repetir em mais dias</h2>
+    <p class="det-sub">${esc(o?.cliente||'')} — a partir de ${dataBR(a.data)}</p>
+    <div class="form-grid">
+      <label class="campo">Dias a mais<input type="number" id="rep-n" min="1" max="30" value="2"></label>
+      <label class="campo" style="flex-direction:row;align-items:center;gap:8px;font-weight:600">
+        <input type="checkbox" id="rep-fds" checked style="width:auto"> Pular sábado e domingo</label>
+    </div>
+    <div class="nota" id="rep-prev"></div>
+    <p class="det-sub">Leva junto a equipe e o recado deste dia.</p>
+    <div class="form-acoes"><button class="btn btn-ghost" id="rep-volta">Cancelar</button>
+      <button class="btn btn-primary" id="rep-ok">Repetir</button></div>`);
+  const prev=()=>{ const n=Math.max(0,+$('#rep-n').value||0);
+    const dias=proximosDias(a.data,n,$('#rep-fds').checked);
+    $('#rep-prev').innerHTML = dias.length ? 'Também vai marcar em: <b>'+dias.map(d=>dataBR(d)).join(' · ')+'</b>' : 'Escolha quantos dias.'; };
+  $('#rep-n').oninput=prev; $('#rep-fds').onchange=prev; prev();
+  $('#rep-volta').onclick=fecharModal;
+  $('#rep-ok').onclick=async()=>{ const n=Math.max(0,+$('#rep-n').value||0);
+    if(n<1){ toast('Informe quantos dias.',true); return; }
+    const fds=$('#rep-fds').checked; fecharModal(); await repetirAgendamento(a,n,fds); };
 }
 async function moverAgendamento(agId, dia){
   const a=state.agenda.find(x=>x.id===agId); if(!a || a.data===dia) return;
@@ -2211,12 +2272,25 @@ function modalMarcarDia(obraId){
   const o=state.obras.find(x=>x.id===obraId); if(!o) return;
   abrirModal(`<h2>Marcar no dia</h2>
     <p class="det-sub">${esc(o.cliente)}</p>
-    <label class="campo">Dia<input type="date" id="md-data" value="${isoDia(new Date())}"></label>
+    <div class="form-grid">
+      <label class="campo">Começa em<input type="date" id="md-data" value="${isoDia(new Date())}"></label>
+      <label class="campo">Quantos dias<input type="number" id="md-dias" min="1" max="30" value="1"></label>
+      <label class="campo full" style="flex-direction:row;align-items:center;gap:8px;font-weight:600">
+        <input type="checkbox" id="md-fds" checked style="width:auto"> Pular sábado e domingo</label>
+    </div>
+    <div class="nota" id="md-prev"></div>
     <div class="form-acoes"><button class="btn btn-ghost" id="md-cancel">Cancelar</button>
       <button class="btn btn-primary" id="md-ok">Marcar</button></div>`);
+  const prev=()=>{ const d=$('#md-data').value; if(!d){ $('#md-prev').textContent=''; return; }
+    const n=Math.max(1,+$('#md-dias').value||1);
+    const dias=[d, ...proximosDias(d, n-1, $('#md-fds').checked)];
+    $('#md-prev').innerHTML = dias.length>1 ? `Vai marcar em <b>${dias.length} dias</b>: ${dias.map(x=>dataBR(x)).join(' · ')}`
+      : `Vai marcar em <b>${dataBR(d)}</b>`; };
+  $('#md-data').oninput=prev; $('#md-dias').oninput=prev; $('#md-fds').onchange=prev; prev();
   $('#md-cancel').onclick=fecharModal;
   $('#md-ok').onclick=async()=>{ const d=$('#md-data').value; if(!d){ toast('Escolha o dia.',true); return; }
-    fecharModal(); await agendarObra(obraId, d); };
+    const n=Math.max(1,+$('#md-dias').value||1); const fds=$('#md-fds').checked;
+    fecharModal(); await agendarObra(obraId, d, n-1, fds); };
 }
 
 /* ---------- ficha do dia (materiais, anexos, observações) ---------- */
@@ -2257,6 +2331,7 @@ function abrirAgendamento(agId){
 
   if(state.isAdmin){
     html+=`<div class="form-acoes"><button class="btn btn-ghost" id="ag-remover">Tirar deste dia</button>
+      <button class="btn btn-sec" id="ag-repetir">⧉ Repetir em mais dias</button>
       <button class="btn btn-sec" id="ag-mover">📅 Mudar de dia</button>
       <button class="btn btn-sec" id="ag-abrir-obra">Abrir obra completa</button></div>`;
   }
@@ -2269,6 +2344,7 @@ function abrirAgendamento(agId){
   $('#ag-edit-obs') && ($('#ag-edit-obs').onclick=()=>editarObsDia(a));
   $('#ag-edit-obs-obra') && ($('#ag-edit-obs-obra').onclick=()=>editarObsObraNaAgenda(a,o));
   $('#ag-abrir-obra') && ($('#ag-abrir-obra').onclick=()=>abrirObra(o.id));
+  $('#ag-repetir') && ($('#ag-repetir').onclick=()=>modalRepetir(a.id));
   $('#ag-mover') && ($('#ag-mover').onclick=()=>{
     const d=prompt('Novo dia (AAAA-MM-DD):', a.data); if(!d) return;
     fecharModal(); moverAgendamento(a.id, d.trim());
