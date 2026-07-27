@@ -253,6 +253,18 @@ function aplicarLayout(lay){
   document.querySelectorAll('#layout-toggle button').forEach(b=>b.classList.toggle('ativa', b.dataset.lay===lay));
 }
 $('#layout-toggle') && $('#layout-toggle').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) aplicarLayout(b.dataset.lay); });
+
+/* olhinho — borra/mostra todos os valores (visual; persiste no aparelho) */
+function aplicarOcultarValores(ocultar){
+  document.body.classList.toggle('ocultar-valores', !!ocultar);
+  const b=$('#btn-olho');
+  if(b){ b.setAttribute('aria-pressed', ocultar?'true':'false');
+    b.title = ocultar ? 'Mostrar valores' : 'Ocultar valores'; }
+  try{ localStorage.setItem('painel_ocultar_valores', ocultar?'1':'0'); }catch(e){}
+}
+$('#btn-olho') && $('#btn-olho').addEventListener('click', ()=>
+  aplicarOcultarValores(!document.body.classList.contains('ocultar-valores')));
+aplicarOcultarValores((()=>{ try{ return localStorage.getItem('painel_ocultar_valores')==='1'; }catch(e){ return false; } })());
 aplicarLayout((()=>{ try{ return localStorage.getItem('painel_layout'); }catch(e){ return null; } })());
 
 /* =====================================================================
@@ -362,7 +374,7 @@ function renderCobrancas(){
         ${o.orcamento_qs?`<div class="card-or">Orç. ${esc(o.orcamento_qs)}</div>`:''}
         <div class="card-end">Concluída ${dataBR(o.concluida_em)} ${o.concluida_por_nome?'por '+esc(o.concluida_por_nome):''}</div></div>
         <span class="cob-badge cob-${f.status_cobranca}">${COBRANCA[f.status_cobranca]}</span></div>
-      <div class="card-prazo">${moeda(f.valor_cobrado??f.valor_total)}</div>
+      <div class="card-prazo"><span class="vlr">${moeda(f.valor_cobrado??f.valor_total)}</span></div>
       <div class="card-rodape">
         ${f.status_cobranca==='a_cobrar'?`<button class="btn btn-aviso btn-sm js-cob-enviada" data-id="${o.id}">Marcar cobrança enviada</button>`:''}
         ${f.status_cobranca!=='pago'?`<button class="btn btn-ok btn-sm js-cob-pago" data-id="${o.id}">Marcar pago</button>`:''}
@@ -408,7 +420,7 @@ function abrirObra(id){
     ${o.orcamento_qs?linha('Orçamento QS',esc(o.orcamento_qs)):''}
     ${o.data_inicio?linha('Início',dataBR(o.data_inicio)):''}
     ${o.data_prazo?linha('Prazo',dataBR(o.data_prazo)):''}
-    ${state.isAdmin&&fin?.valor_total!=null?linha('Valor',moeda(fin.valor_total)):''}</div>`;
+    ${state.isAdmin&&fin?.valor_total!=null?linha('Valor','<span class="vlr">'+moeda(fin.valor_total)+'</span>'):''}</div>`;
 
   // serviços
   if(servs.length){
@@ -911,7 +923,7 @@ function renderMonitor(){
       const f=funcStatus(re), m=manutStatus(re);
       const alerta=autos.length?`<span class="status-badge st-pendente_material">🔴 ${autos.length} auto(s)${novos?' • '+novos+' novo(s)':''}</span>`:'';
       const autosTxt=autos.length?`<div class="re-autos">${autos.map(a=>`<div class="re-auto-li">
-        <span class="chip-serv ${a.tipo==='MUL'?'SDAI':'MANUT_SHP'}">${esc(a.tipo)}</span> <b>${esc(a.codigo)}</b>${a.valor!=null?' · '+moeda(a.valor):''}
+        <span class="chip-serv ${a.tipo==='MUL'?'SDAI':'MANUT_SHP'}">${esc(a.tipo)}</span> <b>${esc(a.codigo)}</b>${a.valor!=null?' · <span class="vlr">'+moeda(a.valor)+'</span>':''}
         ${a.exigencia?'— '+esc(a.exigencia.length>90?a.exigencia.slice(0,90)+'…':a.exigencia):''}${a.prazo?' · <small>prazo '+esc(a.prazo)+'</small>':''}</div>`).join('')}</div>`:'';
       return `<div class="re-row" data-id="${re.id}">
         <div class="re-top"><b>${esc(re.re_codigo)}</b> <span class="re-nome">${esc(re.nome_edificacao||'(sem nome)')}</span> <small>${esc(re.cidade||'')}</small></div>
@@ -983,7 +995,7 @@ function abrirRE(id){
   html+= autos.length ? autos.map(a=>`<div class="auto-row${a.resolvido?' resolvido':''}">
       <span class="chip-serv ${a.tipo==='MUL'?'SDAI':'MANUT_SHP'}">${esc(a.tipo)}</span> <b>${esc(a.codigo)}</b> ${a.data?'· '+esc(a.data):''}
       ${a.novo&&!a.resolvido?'<span class="status-badge st-pendente_material">NOVO</span>':''} ${a.situacao?'· '+esc(a.situacao):''}
-      ${a.valor!=null?'· <b>'+moeda(a.valor)+'</b>':''}
+      ${a.valor!=null?'· <b class="vlr">'+moeda(a.valor)+'</b>':''}
       ${a.prazo?'<div class="auto-exig"><b>Prazo:</b> '+esc(a.prazo)+'</div>':''}
       ${a.exigencia?'<div class="auto-exig"><b>Motivo:</b> '+esc(a.exigencia)+'</div>':''}
       ${state.isAdmin?`<div class="acoes-status" style="margin-top:6px">
@@ -1123,7 +1135,7 @@ function cardOrc(o){
   const nItens=(o.orcamento_itens||[]).length;
   const linhaFollow = f ? `<div class="card-prazo">⏱ <span class="dias urg-${f.cls}">${f.txt}</span>
       <small>próx. ${dataBR(_iso(f.prox))}</small></div>` : '';
-  const valor = o.valor_total!=null ? `<div class="card-or">${moeda(o.valor_total)}</div>` : '';
+  const valor = o.valor_total!=null ? `<div class="card-or vlr">${moeda(o.valor_total)}</div>` : '';
   let acoes='';
   if(o.status==='orcar'){
     acoes=`<button class="btn btn-ok btn-sm js-enviado" data-id="${o.id}">✓ Feito + enviado</button>`;
@@ -1171,7 +1183,7 @@ function abrirOrc(id){
     ${o.contato_nome?linha('Contato',esc(o.contato_nome)):''}
     ${o.telefone?linha('Telefone',esc(o.telefone)):''}
     ${o.orcamento_qs?linha('Orçamento QS',esc(o.orcamento_qs)):''}
-    ${o.valor_total!=null?linha('Valor total',moeda(o.valor_total)):''}
+    ${o.valor_total!=null?linha('Valor total','<span class="vlr">'+moeda(o.valor_total)+'</span>'):''}
     ${o.responsavel?linha('Responsável',esc(o.responsavel)):''}
     ${o.enviado_em?linha('Enviado em',new Date(o.enviado_em).toLocaleDateString('pt-BR')):''}
     ${o.ultimo_contato?linha('Último contato',new Date(o.ultimo_contato).toLocaleDateString('pt-BR')):''}
@@ -1945,7 +1957,7 @@ function renderResultados(){
         </div>`;
       }).join('')}
     </div>
-    <p class="det-sub" style="margin-top:10px">A linha vertical marca a meta de ${moedaCompacta(meta)}. Conta o valor das cobranças <b>enviadas</b> em cada semana (segunda a domingo).</p>
+    <p class="det-sub" style="margin-top:10px">A linha vertical marca a meta de <span class="vlr">${moedaCompacta(meta)}</span>. Conta o valor das cobranças <b>enviadas</b> em cada semana (segunda a domingo).</p>
   </div>`;
 }
 

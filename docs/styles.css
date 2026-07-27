@@ -64,8 +64,33 @@ code{background:#eef1f6; padding:1px 6px; border-radius:6px; font-size:.85em}
   -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
 .topbar-user{display:flex; align-items:center; gap:9px; white-space:nowrap; flex-wrap:wrap}
 
+/* olhinho: oculta/mostra os valores (para o painel na TV / olhares) */
+.btn-olho{margin-left:auto; border:1px solid var(--linha); background:#fff; color:var(--tinta-suave);
+  border-radius:11px; padding:7px 9px; cursor:pointer; display:inline-flex; align-items:center; transition:all .15s}
+.btn-olho svg{width:18px; height:18px; display:block}
+.btn-olho:hover{color:var(--tinta); background:#f3f5f9}
+.btn-olho .olho-off{display:none}
+body.ocultar-valores .btn-olho{color:var(--marca); border-color:var(--marca); background:#fdeef0}
+body.ocultar-valores .btn-olho .olho-on{display:none}
+body.ocultar-valores .btn-olho .olho-off{display:block}
+
+/* tudo que é dinheiro fica borrado quando o olhinho está desligado */
+body.ocultar-valores .vlr,
+body.ocultar-valores .card-valor,
+body.ocultar-valores .meta-hero,
+body.ocultar-valores .meta-sub,
+body.ocultar-valores .meta-pct,
+body.ocultar-valores .meta-rodape,
+body.ocultar-valores .kpi-val,
+body.ocultar-valores .hist-val,
+body.ocultar-valores .hist-resumo b{
+  /* sem transition de propósito: com ela, todo re-render (o painel recarrega
+     sozinho a cada 60s) mostraria os valores nítidos por um instante */
+  filter:blur(7px); user-select:none; pointer-events:none
+}
+
 /* seletor de layout das listas (agrupado à direita, junto das ações) */
-.layout-toggle{display:inline-flex; gap:2px; background:#eef1f6; border-radius:11px; padding:3px; margin-left:auto}
+.layout-toggle{display:inline-flex; gap:2px; background:#eef1f6; border-radius:11px; padding:3px; margin-left:8px}
 .layout-toggle button{border:0; background:transparent; padding:6px 9px; border-radius:8px; cursor:pointer;
   color:var(--tinta-suave); display:inline-flex; align-items:center; transition:all .15s}
 .layout-toggle button svg{width:17px; height:17px}
