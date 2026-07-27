@@ -90,11 +90,13 @@
       <button class="aba ativa" data-aba="obras">Obras</button>
       <button class="aba" data-aba="pendencias">Pendências <span class="badge-num" id="num-pend"></span></button>
       <button class="aba so-admin" data-aba="cobrancas">Cobranças <span class="badge-num" id="num-cob"></span></button>
+      <button class="aba so-admin" data-aba="resultados">Resultados</button>
       <button class="aba so-admin" data-aba="equipe">Equipe</button>
     </nav>
     <main class="conteudo">
       <!-- ABA OBRAS -->
       <section id="view-obras" class="view">
+        <div id="painel-obras-num" class="so-admin"></div>
         <div class="barra-acoes">
           <div class="filtros" id="filtros-status"></div>
           <div class="barra-dir">
@@ -116,9 +118,16 @@
       <!-- ABA COBRANÇAS -->
       <section id="view-cobrancas" class="view hidden">
         <h2 class="view-titulo">Cobranças <small>(obras concluídas — financeiro)</small></h2>
+        <div id="meta-cobranca"></div>
         <div class="filtros" id="filtros-cobranca"></div>
         <div id="lista-cobrancas" class="lista-obras"></div>
         <div id="cob-vazio" class="vazio hidden">Nada para cobrar no momento.</div>
+      </section>
+
+      <!-- ABA RESULTADOS (histórico semanal de cobranças) -->
+      <section id="view-resultados" class="view hidden">
+        <h2 class="view-titulo">Resultados por semana <small>(cobranças enviadas · segunda a domingo)</small></h2>
+        <div id="hist-semanas"></div>
       </section>
 
       <!-- ABA EQUIPE -->
@@ -163,6 +172,7 @@
         <button class="aba" data-abao="perdido">Perdidos <span class="badge-num" id="num-orc-perdido"></span></button>
       </nav>
       <main class="conteudo">
+        <div id="stats-orc"></div>
         <div class="barra-acoes">
           <div class="filtros" id="filtros-orc"></div>
           <div class="barra-dir">

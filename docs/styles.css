@@ -179,6 +179,66 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .btn-wa:hover{background:#1fae57}
 .btn-wa svg{width:16px; height:16px}
 
+/* ---- metas, medidores e KPIs ---- */
+.meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
+.meta-box.compacto{padding:15px 18px}
+.meta-topo{display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap}
+.meta-rot{font-size:.82rem; color:var(--tinta-suave); font-weight:600}
+/* hero: figuras proporcionais de propósito (tabular-nums deixa números grandes frouxos) */
+.meta-hero{font-size:3rem; font-weight:700; line-height:1.05; letter-spacing:-.02em; margin-top:2px}
+.meta-sub{font-size:.85rem; color:var(--tinta-suave); margin-top:3px}
+.meta-dir{display:flex; flex-direction:column; align-items:flex-end; gap:8px}
+.meta-pct{font-size:1.5rem; font-weight:800; color:var(--marca)}
+.meta-pct.ok{color:var(--ok)}
+/* meter: trilho = passo claro do MESMO ramo da cor de preenchimento */
+.meter{height:12px; border-radius:6px; background:#fdeef0; overflow:hidden; margin:15px 0 10px}
+.meter-fill{height:100%; background:var(--marca); border-radius:0 4px 4px 0;
+  transition:width .6s cubic-bezier(.22,.61,.36,1)}
+.meter-fill.ok{background:var(--ok)}
+.meta-rodape{display:flex; gap:20px; flex-wrap:wrap; font-size:.85rem; color:var(--tinta-suave)}
+.meta-rodape b{color:var(--tinta)}
+.meta-rodape .meta-ok{color:var(--ok); font-weight:700}
+
+.kpi-row{display:flex; gap:10px; flex-wrap:wrap}
+.kpi-row.orc{margin-bottom:16px}
+.kpi-tile{background:var(--card); border:1px solid var(--linha); border-radius:12px; padding:11px 14px;
+  min-width:136px; text-align:left; font:inherit; color:inherit}
+button.kpi-tile{cursor:pointer; transition:transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .15s}
+button.kpi-tile:hover{transform:translateY(-2px); box-shadow:var(--sombra)}
+.kpi-val{font-size:1.3rem; font-weight:800; line-height:1.1}
+.kpi-lbl{font-size:.79rem; font-weight:600; margin-top:4px; display:flex; align-items:center; gap:6px}
+.kpi-n{font-size:.72rem; color:var(--tinta-suave); margin-top:1px}
+/* identidade vem do ponto colorido ao lado do rótulo — o número fica em tinta */
+.kpi-dot{width:8px; height:8px; border-radius:50%; flex-shrink:0; background:var(--tinta-suave)}
+.kpi-dot.info{background:var(--info)} .kpi-dot.ambar{background:var(--aviso)}
+.kpi-dot.roxo{background:#7a3bd0} .kpi-dot.verde{background:var(--ok)}
+.kpi-dot.rojo{background:var(--perigo)} .kpi-dot.cinza{background:#aeb6c4}
+.card-valor{font-size:.8rem; font-weight:800; color:var(--tinta); background:#eef1f6;
+  padding:3px 10px; border-radius:20px; margin-left:auto}
+
+/* histórico semanal — barras horizontais + linha de meta */
+.hist-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px}
+.hist-resumo{display:flex; gap:28px; flex-wrap:wrap; padding-bottom:14px; margin-bottom:16px; border-bottom:1px solid var(--linha)}
+.hist-resumo > div{display:flex; flex-direction:column}
+.hist-r-lbl{font-size:.75rem; color:var(--tinta-suave)}
+.hist-resumo b{font-size:1.15rem}
+.hist-graf{display:flex; flex-direction:column; gap:2px}      /* 2px de respiro entre barras */
+.hist-row{display:grid; grid-template-columns:124px 1fr 152px; align-items:center; gap:12px; padding:4px 0}
+.hist-row.atual .hist-lbl{color:var(--tinta); font-weight:700}
+.hist-lbl{font-size:.8rem; color:var(--tinta-suave); font-variant-numeric:tabular-nums}
+.hist-lbl em{font-style:normal; color:var(--marca); font-weight:700}
+.hist-track{position:relative; height:16px; background:#f4f6fa; border-radius:6px}
+.hist-bar{height:100%; background:var(--marca); border-radius:0 4px 4px 0; transition:width .5s ease}
+.hist-bar.ok{background:var(--ok)}
+.hist-meta-line{position:absolute; top:-3px; bottom:-3px; width:1px; background:#aeb6c4; z-index:1}
+.hist-val{font-size:.85rem; font-weight:700; text-align:right; font-variant-numeric:tabular-nums}
+.chip-meta{font-size:.68rem; font-weight:800; color:var(--ok); background:var(--ok-bg); padding:2px 6px; border-radius:20px}
+@media (max-width:640px){
+  .meta-hero{font-size:2.2rem}
+  .hist-row{grid-template-columns:88px 1fr 92px; gap:8px}
+  .hist-resumo{gap:16px}
+}
+
 /* ---- módulo Renovações (pós-venda) ---- */
 .renov-stats{display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px}
 .renov-card{background:var(--card); border-radius:12px; box-shadow:var(--sombra); padding:12px 14px; text-align:center}

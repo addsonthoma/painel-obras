@@ -41,6 +41,7 @@ const state = {
   user:null, perfil:null, isAdmin:false, isComercial:false,
   obras:[], equipe:[], financeiro:{}, monitor:[], orcamentos:[], orcErro:null,
   renovacoes:[], renovErro:null, buscaRenov:'', fRenovDias:'', fRenovStatus:'', fRenovEmail:'',
+  metaCobranca:100000,
   modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
   abaOrc:'pendente', filtroOrc:'todos', buscaOrc:'',
   modalAberto:false,
@@ -203,6 +204,9 @@ async function carregarTudo(silencioso){
   if(state.isAdmin){
     const { data:fin } = await sb.from('obra_financeiro').select('*');
     state.financeiro = {}; (fin||[]).forEach(f=> state.financeiro[f.obra_id]=f);
+    // meta semanal (se a tabela ainda não existir, segue com o padrão de 100 mil)
+    const { data:cfg } = await sb.from('painel_config').select('valor').eq('chave','meta_cobranca_semanal').maybeSingle();
+    if(cfg && cfg.valor!=null) state.metaCobranca = Number(cfg.valor);
   }
   if(state.isComercial){
     const { data:orc, error:eo } = await sb.from('orcamentos')
@@ -269,7 +273,9 @@ $('#modal-fundo').addEventListener('click', e=>{ if(e.target.id==='modal-fundo')
 /* =====================================================================
    RENDER
    ===================================================================== */
-function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias(); if(state.isAdmin){ renderCobrancas(); renderEquipe(); renderRenovacoes(); } if(state.isComercial) renderOrcamentos(); }
+function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias();
+  if(state.isAdmin){ renderCobrancas(); renderEquipe(); renderRenovacoes(); renderPainelObras(); renderMetaCobranca(); renderResultados(); }
+  if(state.isComercial) renderOrcamentos(); }
 
 function renderContadores(){
   const pend = state.obras.filter(o=>o.status_execucao==='pendente_material').length;
@@ -305,6 +311,9 @@ function cardObra(o, extra){
   const eqTxt = equipe.length ? `${o.equipe_confirmada?.length?'<b>Equipe:</b>':'<b>Sugerida:</b>'} ${esc(equipe.join(', '))}` : '<span style="opacity:.6">sem equipe definida</span>';
   const fin = state.financeiro[o.id];
   const cob = fin && fin.status_cobranca!=='nao_aplicavel' ? `<span class="cob-badge cob-${fin.status_cobranca}">${COBRANCA[fin.status_cobranca]}</span>` : '';
+  // valor só para ADMIN (operação nunca vê dinheiro — obra_financeiro é admin-only)
+  const valorTag = (state.isAdmin && fin?.valor_total!=null)
+    ? `<span class="card-valor">${moeda(fin.valor_total)}</span>` : '';
   return `<div class="card-obra urg-${u}" data-id="${o.id}">
     <div class="card-topo">
       <div><div class="card-cliente">${esc(o.cliente)}</div>
@@ -318,7 +327,7 @@ function cardObra(o, extra){
     <div class="card-equipe">${eqTxt}</div>${extra||''}
     <div class="card-rodape">
       <button class="btn btn-sec btn-sm js-materiais" data-id="${o.id}">🖨 Materiais</button>
-      ${cob}
+      ${valorTag}${cob}
     </div>
   </div>`;
 }
@@ -1085,7 +1094,7 @@ function renderFiltrosOrc(){
 }
 function renderOrcamentos(){
   if(!$('#lista-orc')) return;
-  orcContadores(); renderFiltrosOrc(); renderListaOrc();
+  orcContadores(); renderStatsOrc(); renderFiltrosOrc(); renderListaOrc();
 }
 function renderListaOrc(){
   const el=$('#lista-orc'), vazio=$('#orc-vazio');
@@ -1818,6 +1827,186 @@ function emailRenov(id, focoWa){
   $('#re-copy').onclick=()=>{ try{ navigator.clipboard.writeText(corpo); toast('Texto copiado!'); }catch(e){ toast('Copie manualmente.',true); } };
   $('#re-enviado').onclick=async()=>{ await sb.from('renovacoes').update({status_contato:'Enviado'}).eq('id',id); fecharModal(); await carregarTudo(true); toast('Marcado como enviado.'); };
   if(focoWa && waUrl) setTimeout(()=>{ try{ window.open(waUrl,'_blank'); }catch(e){} }, 50);
+}
+
+/* =====================================================================
+   METAS E NÚMEROS
+   Semana = segunda 00:00 → domingo 23:59 (o marcador zera toda segunda).
+   ===================================================================== */
+function inicioSemana(d){ const x=new Date(d); x.setHours(0,0,0,0);
+  const dw=x.getDay(); x.setDate(x.getDate()+(dw===0?-6:1-dw)); return x; }
+function addDias(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function ddmm(d){ const p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}`; }
+function moedaCompacta(v){
+  const n=Number(v)||0;
+  if(Math.abs(n)>=1e6) return 'R$ '+(n/1e6).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mi';
+  if(Math.abs(n)>=1000) return 'R$ '+(n/1000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil';
+  return moeda(n);
+}
+function valorCobrado(f){ return Number(f.valor_cobrado ?? f.valor_total ?? 0)||0; }
+
+/* soma o que foi COBRADO (cobrança enviada) e o que foi PAGO num período */
+function cobrancasNoPeriodo(ini, fim){
+  let enviado=0, pago=0, n=0;
+  state.obras.forEach(o=>{
+    const f=state.financeiro[o.id]; if(!f) return;
+    const v=valorCobrado(f);
+    if(f.cobranca_enviada_em){ const d=new Date(f.cobranca_enviada_em); if(d>=ini&&d<fim){ enviado+=v; n++; } }
+    if(f.pago_em){ const d=new Date(f.pago_em); if(d>=ini&&d<fim) pago+=v; }
+  });
+  return {enviado, pago, n};
+}
+
+/* ---------- marcador da semana (hero + meter) ---------- */
+function renderMetaCobranca(){
+  const el=$('#meta-cobranca'); if(!el) return;
+  const ini=inicioSemana(new Date()), fim=addDias(ini,7);
+  const { enviado, pago, n } = cobrancasNoPeriodo(ini,fim);
+  const meta=Number(state.metaCobranca)||100000;
+  const pct = meta>0 ? (enviado/meta*100) : 0;
+  const bateu = enviado>=meta && meta>0;
+  const diasFalta = Math.max(0, Math.ceil((fim-new Date())/86400000));
+  el.innerHTML=`<div class="meta-box">
+    <div class="meta-topo">
+      <div>
+        <div class="meta-rot">Cobrado nesta semana <small>${ddmm(ini)} a ${ddmm(addDias(ini,6))}</small></div>
+        <div class="meta-hero">${moedaCompacta(enviado)}</div>
+        <div class="meta-sub">meta de ${moedaCompacta(meta)} · ${n} cobrança${n===1?'':'s'} enviada${n===1?'':'s'}</div>
+      </div>
+      <div class="meta-dir">
+        <div class="meta-pct ${bateu?'ok':''}">${pct.toFixed(0)}%</div>
+        <button class="btn btn-ghost btn-sm" id="btn-meta">⚙ Ajustar meta</button>
+      </div>
+    </div>
+    <div class="meter" role="img" aria-label="${pct.toFixed(0)}% da meta semanal de ${moeda(meta)}">
+      <div class="meter-fill ${bateu?'ok':''}" style="width:${Math.min(100,Math.max(0,pct))}%"></div>
+    </div>
+    <div class="meta-rodape">
+      <span class="${bateu?'meta-ok':''}">${bateu
+        ? `✓ Meta batida — ${moedaCompacta(enviado-meta)} acima`
+        : `Faltam <b>${moedaCompacta(meta-enviado)}</b> para a meta`}</span>
+      <span>Recebido (pago) na semana: <b>${moedaCompacta(pago)}</b></span>
+      <span>${diasFalta===0?'zera hoje':`zera em ${diasFalta} dia${diasFalta===1?'':'s'} (segunda)`}</span>
+    </div>
+  </div>`;
+  $('#btn-meta').onclick=()=>modalMeta();
+}
+
+function modalMeta(){
+  const meta=Number(state.metaCobranca)||100000;
+  abrirModal(`<h2>Meta semanal de cobranças</h2>
+    <p class="det-sub">Quanto a empresa quer cobrar por semana (segunda a domingo). O marcador zera toda segunda-feira.</p>
+    <label class="campo">Meta (R$)<input type="number" step="1000" min="0" id="meta-input" value="${meta}"></label>
+    <div class="acoes-status" style="margin-top:8px">
+      ${[50000,100000,150000,200000].map(v=>`<button class="chip-filtro js-meta-rapida" data-v="${v}">${moedaCompacta(v)}</button>`).join('')}
+    </div>
+    <div class="form-acoes"><button class="btn btn-ghost" id="meta-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="meta-salva">Salvar meta</button></div>`);
+  document.querySelectorAll('.js-meta-rapida').forEach(b=>b.onclick=()=>{ $('#meta-input').value=b.dataset.v; });
+  $('#meta-cancel').onclick=fecharModal;
+  $('#meta-salva').onclick=async()=>{
+    const v=Number($('#meta-input').value); if(!(v>0)){ toast('Informe um valor válido.',true); return; }
+    const { error }=await sb.from('painel_config').upsert({ chave:'meta_cobranca_semanal', valor:v });
+    if(error){ toast('Não consegui salvar — rode sql/migracao_metas.sql. ('+error.message+')', true); return; }
+    state.metaCobranca=v; fecharModal(); render(); toast('Meta atualizada para '+moedaCompacta(v));
+  };
+}
+
+/* ---------- histórico das últimas semanas (barras + linha de meta) ---------- */
+function renderResultados(){
+  const el=$('#hist-semanas'); if(!el) return;
+  const N=8, iniAtual=inicioSemana(new Date()), meta=Number(state.metaCobranca)||100000;
+  const linhas=[];
+  for(let i=N-1;i>=0;i--){
+    const ini=addDias(iniAtual,-7*i);
+    linhas.push({ ini, ...cobrancasNoPeriodo(ini, addDias(ini,7)), atual:i===0 });
+  }
+  const max=Math.max(meta, ...linhas.map(l=>l.enviado)) || meta;
+  const posMeta=(meta/max*100);
+  const fechadas=linhas.filter(l=>!l.atual);
+  const media=fechadas.length? fechadas.reduce((s,l)=>s+l.enviado,0)/fechadas.length : 0;
+  const bateram=fechadas.filter(l=>l.enviado>=meta).length;
+
+  el.innerHTML=`<div class="hist-box">
+    <div class="hist-resumo">
+      <div><span class="hist-r-lbl">Média das ${fechadas.length} semanas fechadas</span><b>${moedaCompacta(media)}</b></div>
+      <div><span class="hist-r-lbl">Semanas que bateram a meta</span><b>${bateram} de ${fechadas.length}</b></div>
+      <div><span class="hist-r-lbl">Meta semanal</span><b>${moedaCompacta(meta)}</b></div>
+    </div>
+    <div class="hist-graf">
+      ${linhas.map(l=>{
+        const bateu=l.enviado>=meta && meta>0;
+        const w=max>0?(l.enviado/max*100):0;
+        return `<div class="hist-row${l.atual?' atual':''}">
+          <div class="hist-lbl">${ddmm(l.ini)}–${ddmm(addDias(l.ini,6))}${l.atual?' <em>· atual</em>':''}</div>
+          <div class="hist-track"><div class="hist-meta-line" style="left:${posMeta}%"></div>
+            <div class="hist-bar${bateu?' ok':''}" style="width:${Math.max(w,0)}%"></div></div>
+          <div class="hist-val">${l.enviado?moedaCompacta(l.enviado):'—'}${bateu?' <span class="chip-meta">✓ meta</span>':''}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <p class="det-sub" style="margin-top:10px">A linha vertical marca a meta de ${moedaCompacta(meta)}. Conta o valor das cobranças <b>enviadas</b> em cada semana (segunda a domingo).</p>
+  </div>`;
+}
+
+/* ---------- KPIs de obras (carteira ativa) ---------- */
+function renderPainelObras(){
+  const el=$('#painel-obras-num'); if(!el) return;
+  const val=o=>Number(state.financeiro[o.id]?.valor_total||0);
+  const soma=arr=>arr.reduce((s,o)=>s+val(o),0);
+  const ativas=state.obras.filter(o=>o.status_execucao!=='concluida');
+  const grupos=[
+    ['em_andamento','Em andamento','info'],
+    ['pendente_material','Pendente material','ambar'],
+    ['pendente_execucao','Pendente execução','roxo'],
+  ].map(([st,lbl,cor])=>{ const arr=ativas.filter(o=>o.status_execucao===st); return {lbl,cor,n:arr.length,v:soma(arr)}; });
+  const aReceber=state.obras.filter(o=>['a_cobrar','cobranca_enviada'].includes(state.financeiro[o.id]?.status_cobranca));
+  el.innerHTML=`<div class="meta-box compacto">
+    <div class="meta-topo">
+      <div>
+        <div class="meta-rot">Em obras <small>carteira ativa (não concluídas)</small></div>
+        <div class="meta-hero">${moedaCompacta(soma(ativas))}</div>
+        <div class="meta-sub">${ativas.length} obra${ativas.length===1?'':'s'} em aberto</div>
+      </div>
+      <div class="kpi-row">
+        ${grupos.map(g=>`<div class="kpi-tile"><div class="kpi-val">${moedaCompacta(g.v)}</div>
+          <div class="kpi-lbl"><i class="kpi-dot ${g.cor}"></i>${g.lbl}</div>
+          <div class="kpi-n">${g.n} obra${g.n===1?'':'s'}</div></div>`).join('')}
+        <div class="kpi-tile"><div class="kpi-val">${moedaCompacta(aReceber.reduce((s,o)=>s+Number(state.financeiro[o.id]?.valor_cobrado ?? state.financeiro[o.id]?.valor_total ?? 0),0))}</div>
+          <div class="kpi-lbl"><i class="kpi-dot verde"></i>A receber</div>
+          <div class="kpi-n">${aReceber.length} cobrança${aReceber.length===1?'':'s'}</div></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- KPIs de orçamentos (aprovados / reprovados / follow-up) ---------- */
+function renderStatsOrc(){
+  const el=$('#stats-orc'); if(!el) return;
+  if(state.orcErro){ el.innerHTML=''; return; }
+  const por=s=>state.orcamentos.filter(o=>o.status===s);
+  const soma=arr=>arr.reduce((s,o)=>s+(Number(o.valor_total)||0),0);
+  const defs=[
+    ['pendente','orcar',   'Pendentes',   'A orçar',      'cinza'],
+    ['aberto',  'enviado', 'Em follow-up','Aguardando',   'info'],
+    ['ganho',   'ganho',   'Aprovados',   'Fechados',     'verde'],
+    ['perdido', 'perdido', 'Reprovados',  'Perdidos',     'rojo'],
+  ].map(([aba,st,lbl,sub,cor])=>{ const arr=por(st); return {aba,lbl,sub,cor,n:arr.length,v:soma(arr)}; });
+  const g=defs.find(d=>d.aba==='ganho').n, p=defs.find(d=>d.aba==='perdido').n;
+  const conv = (g+p)>0 ? Math.round(g/(g+p)*100) : null;
+  el.innerHTML=`<div class="kpi-row orc">
+    ${defs.map(d=>`<button class="kpi-tile js-kpi-orc" data-aba="${d.aba}" title="Ver ${d.sub}">
+      <div class="kpi-val">${moedaCompacta(d.v)}</div>
+      <div class="kpi-lbl"><i class="kpi-dot ${d.cor}"></i>${d.lbl}</div>
+      <div class="kpi-n">${d.n} orçamento${d.n===1?'':'s'}</div></button>`).join('')}
+    ${conv!==null?`<div class="kpi-tile"><div class="kpi-val">${conv}%</div>
+      <div class="kpi-lbl">Conversão</div><div class="kpi-n">${g} de ${g+p} decididos</div></div>`:''}
+  </div>`;
+  el.querySelectorAll('.js-kpi-orc').forEach(b=>b.onclick=()=>{
+    state.abaOrc=b.dataset.aba;
+    document.querySelectorAll('#abas-orc .aba').forEach(a=>a.classList.toggle('ativa', a.dataset.abao===state.abaOrc));
+    renderOrcamentos();
+  });
 }
 
 /* ---------- start ---------- */
