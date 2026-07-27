@@ -168,13 +168,25 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .card-end{color:var(--tinta-suave); font-size:.85rem}
 .card-or{color:var(--tinta-suave); font-size:.78rem; font-weight:600}
 .servicos-chips{display:flex; gap:5px; flex-wrap:wrap}
-.chip-serv{font-size:.72rem; font-weight:700; padding:3px 9px; border-radius:20px; background:#eef1f6; color:#3a4150}
-.chip-serv.SHP{background:#e8f0fe; color:#1b56c4}
-.chip-serv.SPDA{background:#fdecf3; color:#b3206b}
-.chip-serv.SDAI{background:#fde7e7; color:#c02d2d}
-.chip-serv.VITAIS{background:#e7f7ee; color:#1c8049}
-.chip-serv.GLP,.chip-serv.AR_COMPRIMIDO{background:#fff0db; color:#a96b00}
-.chip-serv.MANUT_SHP,.chip-serv.MANUT_SKID,.chip-serv.MANUT_ALARME{background:#ece8fb; color:#5b3bbd}
+/* ===== cores por tipo de serviço =====
+   hidrante=vermelho · para-raio=azul · alarme=verde · vitais=amarelo · gás=cinza
+   O fundo do card é PASTEL (texto continua escuro e legível); o chip usa um tom
+   um pouco mais forte para se destacar sobre esse fundo. */
+.sv-shp   { --sv:#d23b3b; --sv-bg:#fdeef0 }
+.sv-spda  { --sv:#2f6df0; --sv-bg:#e9f0fe }
+.sv-sdai  { --sv:#1f9d57; --sv-bg:#e7f7ee }
+.sv-vitais{ --sv:#c98a00; --sv-bg:#fdf4d6 }
+.sv-gas   { --sv:#6b7280; --sv-bg:#edf0f5 }
+.card-obra.sv-shp,.card-obra.sv-spda,.card-obra.sv-sdai,.card-obra.sv-vitais,.card-obra.sv-gas{background:var(--sv-bg)}
+.ag-card.sv-shp,.ag-card.sv-spda,.ag-card.sv-sdai,.ag-card.sv-vitais,.ag-card.sv-gas{
+  background:var(--sv-bg); border-left-color:var(--sv)}
+
+.chip-serv{font-size:.72rem; font-weight:700; padding:3px 9px; border-radius:20px; background:#e2e6ee; color:#3a4150}
+.chip-serv.SHP,.chip-serv.MANUT_SHP,.chip-serv.MANUT_SKID{background:#fbd7db; color:#9c1f27}
+.chip-serv.SPDA{background:#d7e3fc; color:#1a4db0}
+.chip-serv.SDAI,.chip-serv.MANUT_ALARME{background:#cdebdb; color:#116039}
+.chip-serv.VITAIS{background:#fbebb0; color:#7d5800}
+.chip-serv.GLP,.chip-serv.AR_COMPRIMIDO{background:#e0e4ec; color:#454d5c}
 .card-prazo{display:flex; align-items:center; gap:8px; font-size:.9rem; font-weight:700}
 .card-prazo .dias{padding:2px 9px; border-radius:20px}
 .dias.urg-vermelho{background:var(--perigo-bg); color:var(--perigo)}
@@ -212,6 +224,7 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .ag-modo button{border:0; background:transparent; padding:6px 13px; border-radius:8px; cursor:pointer;
   font-weight:600; font-size:.86rem; color:var(--tinta-suave)}
 .ag-modo button.ativa{background:#fff; color:var(--marca); box-shadow:0 1px 4px rgba(20,24,40,.15)}
+.ag-legenda{display:flex; gap:5px; flex-wrap:wrap; margin:-4px 0 12px}
 .ag-wrap{display:grid; grid-template-columns:250px 1fr; gap:16px; align-items:start}
 .ag-pool{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:14px; position:sticky; top:130px}
 .ag-pool h3{margin:0 0 4px; font-size:.95rem; display:flex; align-items:center; gap:6px}

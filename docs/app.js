@@ -15,6 +15,19 @@ const SERVICOS = {
   MANUT_SKID:    { label:'Manutenção Skid de bombas' },
   MANUT_ALARME:  { label:'Manutenção Alarme' },
 };
+/* cor do card por tipo de serviço (fundo pastel):
+   hidrante=vermelho · para-raio=azul · alarme=verde · vitais=amarelo · gás=cinza */
+const COR_DE_SERVICO = { SHP:'shp', MANUT_SHP:'shp', MANUT_SKID:'shp', SPDA:'spda',
+  SDAI:'sdai', MANUT_ALARME:'sdai', VITAIS:'vitais', GLP:'gas', AR_COMPRIMIDO:'gas' };
+/* quando a obra tem vários serviços, manda o de maior peso (hidrante > alarme > spda > vitais > gás) */
+const PESO_SERVICO = ['shp','sdai','spda','vitais','gas'];
+function classeServico(o){
+  const cores=(o.obra_servicos||[]).map(s=>COR_DE_SERVICO[s.servico]).filter(Boolean);
+  if(!cores.length) return '';
+  for(const c of PESO_SERVICO){ if(cores.includes(c)) return 'sv-'+c; }
+  return '';
+}
+
 const SKILL_DE_SERVICO = { SHP:'SHP', MANUT_SHP:'SHP', SPDA:'SPDA', SDAI:'SDAI',
   MANUT_ALARME:'SDAI', VITAIS:'VITAIS', GLP:'GAS', AR_COMPRIMIDO:'GAS', MANUT_SKID:'SKID' };
 const FRONT_DE_SERVICO = { SHP:'hidraulica', MANUT_SHP:'hidraulica', MANUT_SKID:'hidraulica',
@@ -330,7 +343,7 @@ function cardObra(o, extra){
   // valor só para ADMIN (operação nunca vê dinheiro — obra_financeiro é admin-only)
   const valorTag = (state.isAdmin && fin?.valor_total!=null)
     ? `<span class="card-valor">${moeda(fin.valor_total)}</span>` : '';
-  return `<div class="card-obra urg-${u}" data-id="${o.id}">
+  return `<div class="card-obra urg-${u} ${classeServico(o)}" data-id="${o.id}">
     <div class="card-topo">
       <div><div class="card-cliente">${esc(o.cliente)}</div>
         ${o.endereco?`<div class="card-end">${esc(o.endereco)}</div>`:''}
@@ -2137,7 +2150,7 @@ function renderAgenda(){
   $('#ag-pool-num').textContent = pool.length||'';
   $('#ag-lista-pool').innerHTML = pool.length ? pool.map(o=>{
     const servs=(o.obra_servicos||[]).map(s=>`<span class="chip-serv ${s.servico}">${esc(SERVICOS[s.servico]?.label||s.servico)}</span>`).join('');
-    return `<div class="ag-card pool" draggable="${state.isAdmin}" data-obra="${o.id}">
+    return `<div class="ag-card pool ${classeServico(o)}" draggable="${state.isAdmin}" data-obra="${o.id}">
       <div class="ag-card-nome">${esc(o.cliente)}</div>
       ${servs?`<div class="servicos-chips">${servs}</div>`:''}
       ${o.data_prazo?`<div class="ag-card-sub">prazo ${dataBR(o.data_prazo)}</div>`:''}
@@ -2156,7 +2169,7 @@ function cardAgendado(a){
   const faltando=itens.filter(i=>i.faltando).length;
   const separados=itens.filter(i=>i.separado).length;
   const eq=(a.equipe&&a.equipe.length)?a.equipe:(o.equipe_confirmada||[]);
-  return `<div class="ag-card ag-ok" draggable="${state.isAdmin}" data-ag="${a.id}">
+  return `<div class="ag-card ag-ok ${classeServico(o)}" draggable="${state.isAdmin}" data-ag="${a.id}">
     ${state.isAdmin?`<div class="ag-card-acoes">
       <button class="ag-mini js-ag-rep" title="Repetir em mais dias">⧉</button>
       <button class="ag-mini js-ag-x" title="Tirar deste dia">✕</button></div>`:''}
