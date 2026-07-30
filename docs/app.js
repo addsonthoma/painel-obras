@@ -825,6 +825,22 @@ function orsJaExistem(orStr, lista, ignorarId){
 async function salvarObra(o){
   const f=$('#form-obra');
   const cliente=f.cliente.value.trim(); if(!cliente){ toast('Informe o cliente.',true); return; }
+  // trava anti-duplo-clique: sem isso, dois cliques rápidos criam a obra 2x
+  // (foi o que gerou os pares UNIMED e LEANDRO PEDRINI, criados no mesmo minuto)
+  const btnSalvar=f.querySelector('button[type=submit]');
+  if(btnSalvar?.disabled) return;
+  // aviso de cliente repetido em obra ainda aberta (o aviso de OR já existe mais adiante)
+  if(!o && !f.orcamento_qs.value.trim()){
+    const nm=s=>(s||'').toUpperCase().replace(/\s+/g,' ').trim();
+    const igualCli = state.obras.find(x=>nm(x.cliente)===nm(cliente) && x.status_execucao!=='concluida');
+    if(igualCli && !confirm(`Já existe uma obra em aberto para "${igualCli.cliente}".\n\nCriar outra assim mesmo?`)) return;
+  }
+  if(btnSalvar){ btnSalvar.disabled=true; btnSalvar.textContent='Salvando…'; }
+  try{ await salvarObraDados(o, f, cliente); }
+  finally{ if(btnSalvar){ btnSalvar.disabled=false; btnSalvar.textContent=o?'Salvar alterações':'Criar obra'; } }
+}
+
+async function salvarObraDados(o, f, cliente){
   const servicos=[...document.querySelectorAll('#serv-list .serv-row')].map(r=>({servico:r.querySelector('.f-serv').value,
     dias:r.querySelector('.f-dias').value?+r.querySelector('.f-dias').value:null, pessoas:r.querySelector('.f-pess').value?+r.querySelector('.f-pess').value:null})).filter(s=>s.servico);
   const itens=[...document.querySelectorAll('#item-list .item-row')].map((r,i)=>({produto:r.querySelector('.prod').value.trim(),
