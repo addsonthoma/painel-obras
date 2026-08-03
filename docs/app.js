@@ -362,7 +362,7 @@ function cardObra(o, extra){
 }
 
 function renderObras(){
-  let arr=state.obras;
+  let arr=state.obras.filter(o=>!o.avulsa);  // cobranças avulsas não são obra de campo
   if(state.filtroStatus==='ativas') arr=arr.filter(o=>o.status_execucao!=='concluida');
   else if(state.filtroStatus!=='todas') arr=arr.filter(o=>o.status_execucao===state.filtroStatus);
   if(state.busca){ arr=arr.filter(o=> (o.cliente+' '+(o.endereco||'')+' '+(o.orcamento_qs||'')).toLowerCase().includes(state.busca)); }
@@ -374,7 +374,7 @@ function renderObras(){
 
 /* obras que precisam de compra: status pendente_material OU com item marcado como faltando na agenda */
 function itensFaltando(o){ return (o.obra_itens||[]).filter(i=>i.faltando); }
-function temPendencia(o){ return o.status_execucao==='pendente_material' || itensFaltando(o).length>0; }
+function temPendencia(o){ return !o.avulsa && (o.status_execucao==='pendente_material' || itensFaltando(o).length>0); }
 
 function renderPendencias(){
   const arr=ordenarUrgencia(state.obras.filter(temPendencia));
@@ -397,9 +397,11 @@ function renderCobrancas(){
   $('#lista-cobrancas').innerHTML = arr.map(o=>{
     const f=state.financeiro[o.id];
     return `<div class="card-obra" data-id="${o.id}">
-      <div class="card-topo"><div><div class="card-cliente">${esc(o.cliente)}</div>
+      <div class="card-topo"><div><div class="card-cliente">${esc(o.cliente)} ${o.avulsa?'<span class="tag-avulsa">avulsa</span>':''}</div>
         ${o.orcamento_qs?`<div class="card-or">Orç. ${esc(o.orcamento_qs)}</div>`:''}
-        <div class="card-end">Concluída ${dataBR(o.concluida_em)} ${o.concluida_por_nome?'por '+esc(o.concluida_por_nome):''}</div></div>
+        <div class="card-end">${o.avulsa
+          ? (o.observacoes?esc(o.observacoes)+' · ':'')+dataBR(o.concluida_em)
+          : `Concluída ${dataBR(o.concluida_em)} ${o.concluida_por_nome?'por '+esc(o.concluida_por_nome):''}`}</div></div>
         <span class="cob-badge cob-${f.status_cobranca}">${COBRANCA[f.status_cobranca]}</span></div>
       <div class="card-prazo"><span class="vlr">${moeda(f.valor_cobrado??f.valor_total)}</span></div>
       <div class="card-rodape">
@@ -413,7 +415,8 @@ function renderCobrancas(){
     c.querySelector('.js-cob-enviada')?.addEventListener('click', ev=>{ev.stopPropagation(); marcarCobranca(c.dataset.id,'cobranca_enviada');});
     c.querySelector('.js-cob-pago')?.addEventListener('click', ev=>{ev.stopPropagation(); marcarCobranca(c.dataset.id,'pago');});
     c.querySelector('.js-cob-wa')?.addEventListener('click', ev=>{ev.stopPropagation(); whatsappCobranca(c.dataset.id);});
-    c.addEventListener('click', ()=>abrirObra(c.dataset.id));
+    c.addEventListener('click', ()=>{ const ob=state.obras.find(x=>x.id===c.dataset.id);
+      if(ob?.avulsa) formCobrancaAvulsa(ob); else abrirObra(c.dataset.id); });
   });
 }
 
@@ -1885,6 +1888,79 @@ function emailRenov(id, focoWa){
 }
 
 /* =====================================================================
+   COBRANÇA AVULSA — cobrar sem criar obra (ART, recarga, visita técnica…)
+   Guardada como obra com avulsa=true e já concluída: assim herda a aba
+   Cobranças, o medidor da meta semanal, o "marcar pago" e o WhatsApp.
+   ===================================================================== */
+$('#btn-nova-cobranca') && $('#btn-nova-cobranca').addEventListener('click', ()=>formCobrancaAvulsa(null));
+
+function formCobrancaAvulsa(o){
+  const ed=!!o, fin=o?state.financeiro[o.id]:null;
+  const st=fin?.status_cobranca||'a_cobrar';
+  const ref=(fin?.pago_em||fin?.cobranca_enviada_em||o?.concluida_em||new Date().toISOString()).slice(0,10);
+  const opt=(v,l)=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`;
+  abrirModal(`<h2>${ed?'Editar cobrança':'Nova cobrança'}</h2>
+    <p class="det-sub">Cobrança avulsa — não cria obra nem entra na agenda.</p>
+    <form id="form-cob"><div class="form-grid">
+      <label class="campo full">Cliente *<input name="cliente" required value="${esc(o?.cliente||'')}"></label>
+      <label class="campo full">Referência <small>— o que está sendo cobrado</small>
+        <input name="referencia" placeholder="Ex.: ART de manutenção · recarga de extintores · visita técnica" value="${esc(o?.observacoes||'')}"></label>
+      <label class="campo">Telefone (WhatsApp)<input name="telefone" placeholder="(47) 9 9999-9999" value="${esc(o?.telefone_cliente||'')}"></label>
+      <label class="campo">Nº do orçamento<input name="orcamento_qs" placeholder="OR930 (opcional)" value="${esc(o?.orcamento_qs||'')}"></label>
+      <label class="campo">Valor (R$) *<input type="number" step="0.01" min="0" name="valor" required value="${fin?.valor_total??''}"></label>
+      <label class="campo">Situação<select name="status">
+        ${opt('a_cobrar','A cobrar')}${opt('cobranca_enviada','Cobrança enviada')}${opt('pago','Pago')}</select></label>
+      <label class="campo full">Data da cobrança<input type="date" name="data" value="${ref}"></label>
+    </div>
+    <p class="det-sub">É esta data que conta no marcador da meta semanal (quando a situação é "enviada" ou "pago").</p>
+    <div class="form-acoes">${ed?'<button type="button" class="btn btn-ghost" id="cob-del">Excluir</button>':''}
+      <button type="button" class="btn btn-ghost" id="cob-cancel">Cancelar</button>
+      <button type="submit" class="btn btn-primary">${ed?'Salvar alterações':'Criar cobrança'}</button></div></form>`);
+  $('#cob-cancel').onclick=fecharModal;
+  $('#cob-del') && ($('#cob-del').onclick=()=>excluirCobrancaAvulsa(o));
+  $('#form-cob').onsubmit=e=>{ e.preventDefault(); salvarCobrancaAvulsa(o); };
+}
+
+async function salvarCobrancaAvulsa(o){
+  const f=$('#form-cob');
+  const cliente=f.cliente.value.trim(); if(!cliente){ toast('Informe o cliente.',true); return; }
+  const valor=f.valor.value!==''?+f.valor.value:null;
+  if(!(valor>0)){ toast('Informe o valor da cobrança.',true); return; }
+  const btn=f.querySelector('button[type=submit]');
+  if(btn?.disabled) return;                       // trava anti-duplo-clique
+  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
+  try{
+    const status=f.status.value;
+    const dia=f.data.value||isoDia(new Date());
+    const quando=new Date(dia+'T12:00:00').toISOString();
+    const dados={ cliente, telefone_cliente:f.telefone.value.trim()||null,
+      orcamento_qs:f.orcamento_qs.value.trim()||null, observacoes:f.referencia.value.trim()||null,
+      avulsa:true, status_execucao:'concluida', concluida_em:quando,
+      concluida_por_nome:state.perfil?.nome||state.user?.email||null };
+    let id=o?.id;
+    if(o){ const { error }=await sb.from('obras').update(dados).eq('id',o.id);
+           if(error){ toast(error.message,true); return; } }
+    else { const { data, error }=await sb.from('obras').insert(dados).select('id').single();
+           if(error){ toast(/avulsa/i.test(error.message)
+             ? 'Rode sql/migracao_cobranca_avulsa.sql no Supabase primeiro.' : error.message, true); return; }
+           id=data.id; }
+    await sb.from('obra_financeiro').upsert({ obra_id:id, valor_total:valor, status_cobranca:status,
+      cobranca_enviada_em: (status==='cobranca_enviada'||status==='pago') ? quando : null,
+      pago_em: status==='pago' ? quando : null });
+    await logar(id,'cobrança', (o?'Editou':'Criou')+' cobrança avulsa de '+moeda(valor));
+    fecharModal(); await carregarTudo(true);
+    toast(o?'Cobrança atualizada.':'Cobrança criada ✓');
+  } finally { if(btn){ btn.disabled=false; btn.textContent=o?'Salvar alterações':'Criar cobrança'; } }
+}
+
+async function excluirCobrancaAvulsa(o){
+  if(!confirm(`Excluir a cobrança de "${o.cliente}"? Não dá pra desfazer.`)) return;
+  const { error }=await sb.from('obras').delete().eq('id',o.id);
+  if(error){ toast(error.message,true); return; }
+  fecharModal(); await carregarTudo(true); toast('Cobrança excluída.');
+}
+
+/* =====================================================================
    METAS E NÚMEROS
    Semana = segunda 00:00 → domingo 23:59 (o marcador zera toda segunda).
    ===================================================================== */
@@ -2102,7 +2178,7 @@ function agendaDoDia(iso){ return state.agenda.filter(a=>a.data===iso); }
 function obrasAAgendar(){
   const hoje=isoDia(new Date());
   const comDia=new Set(state.agenda.filter(a=>a.data>=hoje).map(a=>a.obra_id));
-  let arr=state.obras.filter(o=>o.status_execucao!=='concluida' && !comDia.has(o.id));
+  let arr=state.obras.filter(o=>!o.avulsa && o.status_execucao!=='concluida' && !comDia.has(o.id));
   const q=(state.buscaAg||'').trim().toLowerCase();
   if(q) arr=arr.filter(o=>(o.cliente+' '+(o.endereco||'')+' '+(o.orcamento_qs||'')+' '+
     (o.obra_servicos||[]).map(s=>SERVICOS[s.servico]?.label||s.servico).join(' ')).toLowerCase().includes(q));

@@ -345,6 +345,8 @@ button.kpi-tile:hover{transform:translateY(-2px); box-shadow:var(--sombra)}
 .kpi-dot.info{background:var(--info)} .kpi-dot.ambar{background:var(--aviso)}
 .kpi-dot.roxo{background:#7a3bd0} .kpi-dot.verde{background:var(--ok)}
 .kpi-dot.rojo{background:var(--perigo)} .kpi-dot.cinza{background:#aeb6c4}
+.tag-avulsa{font-size:.62rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+  background:#ece8fb; color:#5b3bbd; padding:2px 7px; border-radius:20px; vertical-align:middle}
 .card-valor{font-size:.8rem; font-weight:800; color:var(--tinta); background:#eef1f6;
   padding:3px 10px; border-radius:20px; margin-left:auto}
 
