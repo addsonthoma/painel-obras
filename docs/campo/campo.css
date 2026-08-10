@@ -1,0 +1,170 @@
+/* =====================================================================
+   CAMPO — apontamento de obra pelo celular
+   Feito para dedo grande, sol na tela e celular velho.
+   Regras: alvo mínimo de 64px, fonte mínima de 17px, nada de menu suspenso.
+   ===================================================================== */
+
+/* Tema claro assumido de proposito: a tela e usada no sol, em obra.
+   Fixado para nao herdar o modo escuro de quem abrir. */
+:root{
+  color-scheme:light;
+  --marca:#E84A56;
+  --marca-escuro:#CF3B46;
+  --tinta:#1f2430;
+  --tinta-suave:#5b6472;
+  --linha:#dfe3ea;
+  --fundo:#f4f6fa;
+  --card:#ffffff;
+  --ok:#1f9d57;   --ok-bg:#e6f6ec;   --ok-linha:#b8e3c8;
+  --aviso:#b06f00; --aviso-bg:#fef3da;
+  --perigo:#c92f2f; --perigo-bg:#fde7e7; --perigo-linha:#f5c2c2;
+  --raio:16px;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+
+html,body{margin:0;padding:0}
+body{
+  background:var(--fundo);
+  color:var(--tinta);
+  font:400 17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  min-height:100vh;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+
+/* ---------------------------------------------------------------- chrome */
+.barra-demo{
+  background:var(--aviso-bg); color:var(--aviso);
+  padding:8px 12px; font-size:14px; text-align:center;
+  border-bottom:1px solid #f0dcae;
+  display:flex; gap:8px; align-items:center; justify-content:center; flex-wrap:wrap;
+}
+.barra-demo button{
+  background:#fff; border:1px solid #e2c894; color:var(--aviso);
+  border-radius:8px; padding:5px 10px; font-size:13px; font-weight:500;
+}
+.barra-demo button[aria-pressed="true"]{background:var(--aviso); color:#fff; border-color:var(--aviso)}
+
+.topo{
+  background:var(--marca); color:#fff;
+  padding:14px 18px; display:flex; align-items:center; gap:10px;
+}
+.topo h1{margin:0; font-size:17px; font-weight:500; letter-spacing:.2px}
+.topo .quem{margin-left:auto; font-size:14px; opacity:.9}
+
+.tela{padding:18px; max-width:560px; margin:0 auto}
+.tela h2{margin:0 0 4px; font-size:21px; font-weight:500}
+.tela .sub{margin:0 0 18px; color:var(--tinta-suave); font-size:15px}
+
+/* --------------------------------------------------------------- botões */
+.botao{
+  display:flex; align-items:center; gap:12px;
+  width:100%; min-height:64px; padding:16px 18px; margin:0 0 10px;
+  background:var(--card); color:var(--tinta);
+  border:1px solid var(--linha); border-radius:var(--raio);
+  font:500 18px/1.3 inherit; text-align:left;
+  transition:transform .06s;
+}
+.botao:active{transform:scale(.985)}
+.botao[aria-pressed="true"]{border-color:var(--marca); background:#fff5f5}
+.botao .marca-check{margin-left:auto; color:var(--marca); font-size:22px; line-height:1}
+.botao[aria-pressed="false"] .marca-check{visibility:hidden}
+.botao .obs{display:block; font-size:14px; font-weight:400; color:var(--tinta-suave); margin-top:2px}
+.botao.tracejado{border-style:dashed; color:var(--tinta-suave); font-weight:400}
+
+.gigante{
+  flex-direction:column; justify-content:center; text-align:center;
+  min-height:190px; gap:8px; font-size:24px; border:none;
+}
+.gigante svg{width:52px; height:52px}
+.gigante.verde{background:var(--ok-bg); color:var(--ok); border:1px solid var(--ok-linha)}
+.gigante.vermelho{background:var(--perigo-bg); color:var(--perigo); border:1px solid var(--perigo-linha)}
+.gigante.escuro{background:var(--tinta); color:#fff; min-height:76px; font-size:20px; flex-direction:row; justify-content:center}
+.gigante.escuro svg{width:26px; height:26px}
+
+.avancar{
+  position:sticky; bottom:0; padding:12px 0 4px;
+  background:linear-gradient(to top,var(--fundo) 70%,rgba(244,246,250,0));
+}
+
+.grade2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.grade2 .botao{margin:0; flex-direction:column; text-align:center; gap:6px; min-height:104px; font-size:16px}
+.grade2 .botao svg{width:30px; height:30px}
+.grade2 .botao .marca-check{position:absolute; margin:0}
+.grade2 .botao{position:relative}
+.grade2 .botao .marca-check{top:8px; right:10px}
+
+/* ---------------------------------------------------------------- relógio */
+.relogio{text-align:center; padding:14px 0 6px}
+.relogio .hora{font-size:52px; font-weight:500; line-height:1; font-variant-numeric:tabular-nums}
+.relogio .dia{color:var(--tinta-suave); font-size:15px; margin-top:6px}
+
+.faixa{
+  background:var(--ok-bg); border:1px solid var(--ok-linha); color:#12703d;
+  border-radius:var(--raio); padding:14px 16px; margin:0 0 16px;
+}
+.faixa .titulo{font-weight:500; font-size:18px}
+.faixa .desde{font-size:15px; opacity:.85; margin-top:2px}
+.faixa.cinza{background:#eef1f6; border-color:var(--linha); color:var(--tinta-suave)}
+
+.aviso-gps{
+  background:#eef1f6; border-radius:12px; padding:12px 14px; margin:0 0 14px;
+  font-size:15px; color:var(--tinta-suave); display:flex; gap:10px; align-items:flex-start;
+}
+.aviso-gps svg{width:20px; height:20px; flex:none; margin-top:2px}
+
+textarea{
+  width:100%; min-height:110px; padding:14px;
+  border:1px solid var(--linha); border-radius:var(--raio);
+  font:400 17px/1.45 inherit; color:var(--tinta); background:var(--card);
+  resize:vertical;
+}
+textarea:focus{outline:none; border-color:var(--marca)}
+
+.dica{font-size:14px; color:var(--tinta-suave); margin:8px 0 0}
+
+.fim{text-align:center; padding:44px 18px}
+.fim svg{width:76px; height:76px; color:var(--ok)}
+.fim h2{font-size:26px; margin:14px 0 6px}
+.fim p{color:var(--tinta-suave); margin:0}
+
+.voltar{
+  background:none; border:none; color:var(--tinta-suave);
+  font:400 16px inherit; padding:10px 0; margin-bottom:6px;
+  display:flex; align-items:center; gap:6px;
+}
+.voltar svg{width:18px; height:18px}
+
+/* -------------------------------------------------- quadro do escritório */
+.quadro{max-width:760px; margin:0 auto; padding:18px}
+.quadro-topo{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px}
+.quadro-topo h2{margin:0; font-size:20px; font-weight:500}
+.quadro-topo .agora{color:var(--tinta-suave); font-size:14px}
+
+.linha-equipe{
+  background:var(--card); border:1px solid var(--linha); border-radius:var(--raio);
+  padding:14px 16px; margin-bottom:9px; display:flex; gap:13px; align-items:center;
+}
+.linha-equipe svg{width:22px; height:22px; flex:none}
+.linha-equipe .corpo{flex:1; min-width:0}
+.linha-equipe .obra{font-weight:500; font-size:17px}
+.linha-equipe .gente{color:var(--tinta-suave); font-size:15px; margin-top:2px}
+.linha-equipe .tempo{text-align:right; flex:none}
+.linha-equipe .tempo b{display:block; font-weight:500; font-variant-numeric:tabular-nums}
+.linha-equipe .tempo span{font-size:13px; color:var(--tinta-suave)}
+.linha-equipe.em-obra svg{color:var(--ok)}
+.linha-equipe.a-caminho svg{color:var(--tinta-suave)}
+.linha-equipe.alerta{background:var(--aviso-bg); border-color:#f0dcae; color:var(--aviso)}
+.linha-equipe.alerta svg{color:var(--aviso)}
+.linha-equipe.alerta .gente{color:var(--aviso); opacity:.85}
+.linha-equipe.pendente{background:#eef1f6}
+
+.totais{border-top:1px solid var(--linha); margin-top:14px; padding-top:14px; display:flex; gap:26px}
+.totais div span{display:block; font-size:13px; color:var(--tinta-suave)}
+.totais div b{font-size:22px; font-weight:500}
+
+.secao{margin:22px 0 8px; font-size:15px; color:var(--tinta-suave); font-weight:500}
+
+@media (min-width:640px){
+  .tela{padding:26px 18px}
+}
