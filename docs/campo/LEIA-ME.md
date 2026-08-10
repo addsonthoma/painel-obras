@@ -44,7 +44,35 @@ quem estava.
 | Na obra | "cheguei" |
 | No fim | "terminei" → serviço → veículo → equipe → falar → enviar |
 
-`?quadro` na URL abre o quadro do escritório em vez da tela do celular.
+`?quadro` na URL abre o quadro do escritório. `?acao=cheguei` já abre na
+escolha da obra — é o atalho que aparece ao segurar o ícone no Android.
+
+## Instalação no celular
+
+É um PWA: instala pela tela de início, sem loja de aplicativo.
+
+- **Android:** o Chrome oferece instalar sozinho; o app também mostra um botão
+  "Instalar agora" quando o navegador libera o `beforeinstallprompt`.
+- **iPhone:** o Safari não tem esse botão. O app detecta o aparelho e mostra o
+  passo a passo do menu Compartilhar → Adicionar à Tela de Início.
+
+O `manifest.json` declara escopo `./`, então o Campo instala como aplicativo
+separado do Portal — ícone próprio, sem barra de navegador. O `sw.js` tem
+escopo mais específico que o do Portal e por isso manda nesta pasta.
+
+### Ícones
+
+`scripts/gerar_icones_campo.py` monta ícones e telas de abertura a partir de
+`docs/assets/logo.png`. O ícone é a chama da marca sobre o vermelho, com a
+palavra CAMPO — deliberadamente diferente do ícone do Portal, que é o logo
+inteiro. Dois ícones vermelhos iguais na tela de início fariam o funcionário
+abrir o aplicativo errado.
+
+Rode de novo se o logo mudar:
+
+```
+python scripts/gerar_icones_campo.py
+```
 
 ## Para colocar no ar
 

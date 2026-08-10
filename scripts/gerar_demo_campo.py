@@ -10,12 +10,27 @@ o resultado onde for pedido (padrao: ao lado, campo-beta.html).
 Fonte unica: nao existe copia paralela do app. Mexeu em docs/campo/,
 roda de novo e o beta acompanha.
 """
+import base64
 import re
 import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 CAMPO = RAIZ / "docs" / "campo"
+
+
+def embutir_imagens(texto: str) -> str:
+    """Troca assets/xxx.png por data URI. Sem isso o arquivo solto perde a
+    marca do cabecalho, que e servida por caminho relativo."""
+    def trocar(m):
+        arquivo = CAMPO / m.group(1)
+        if not arquivo.is_file():
+            print(f"AVISO: {m.group(1)} nao existe — deixei o caminho como estava.")
+            return m.group(0)
+        b64 = base64.b64encode(arquivo.read_bytes()).decode("ascii")
+        return f'"data:image/png;base64,{b64}"'
+
+    return re.sub(r'"(assets/[\w.-]+\.png)"', trocar, texto)
 
 
 def main() -> int:
@@ -33,6 +48,7 @@ def main() -> int:
     corpo = re.sub(r'\s*<script src="campo\.js"></script>', "", corpo)
 
     saida = f"<style>\n{css}\n</style>\n{corpo.strip()}\n<script>\n{js}\n</script>\n"
+    saida = embutir_imagens(saida)
 
     destino.parent.mkdir(parents=True, exist_ok=True)
     destino.write_text(saida, encoding="utf-8")

@@ -145,39 +145,106 @@ function obraMaisProxima(p) {
   return melhor;
 }
 
+/* ------------------------------------------------------------ instalacao
+   Android dispara beforeinstallprompt e da para instalar com um botao.
+   iOS nao tem isso: so pelo menu Compartilhar. Por isso as instrucoes
+   mudam conforme o aparelho — o funcionario nao tem que descobrir sozinho. */
+let convite = null;   // evento beforeinstallprompt guardado
+
+const ehIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+  (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+const instalado = () => window.matchMedia('(display-mode: standalone)').matches ||
+  navigator.standalone === true;
+
+window.addEventListener('beforeinstallprompt', (ev) => {
+  ev.preventDefault();
+  convite = ev;
+  render();
+});
+
+window.addEventListener('appinstalled', () => { convite = null; render(); });
+
 /* --------------------------------------------------------------- telas */
 function render() {
   const app = document.getElementById('app');
-  app.innerHTML = (CAMPO_DEMO ? barraDemo() : '') + topo() + corpo();
+  const semAbas = rascunho || tela === 'instalar' || tela === 'pronto' || !S.eu;
+  app.innerHTML = topo() + corpo() + (semAbas ? '' : abas());
   if (cronometro) { clearInterval(cronometro); cronometro = null; }
   if (S.atual?.chegou_em && !rascunho) cronometro = setInterval(render, 30000);
 }
 
-function barraDemo() {
-  const q = tela === 'quadro';
-  return `<div class="barra-demo">
-    <span>Versão de demonstração</span>
-    <button data-acao="ver-celular" aria-pressed="${!q}">Celular da equipe</button>
-    <button data-acao="ver-quadro" aria-pressed="${q}">Quadro do escritório</button>
-    <button data-acao="recomecar">Recomeçar</button>
-  </div>`;
-}
-
 function topo() {
-  if (tela === 'quadro') return `<header class="topo"><h1>Rodrigues Preventivos</h1></header>`;
+  const secao = tela === 'quadro' ? 'Escritório' : 'Campo';
   return `<header class="topo">
-    <h1>Apontamento de obra</h1>
-    ${S.eu ? `<span class="quem">${esc(S.eu)}</span>` : ''}
+    <img src="assets/marca-branca.png" alt="Rodrigues Preventivos">
+    <span class="secao">${secao}</span>
+    ${S.eu && tela !== 'quadro' ? `<span class="quem">${esc(S.eu)}</span>` : ''}
+    ${CAMPO_DEMO ? '<span class="beta">beta</span>' : ''}
   </header>`;
 }
 
 function corpo() {
+  if (tela === 'instalar') return telaInstalar();
   if (tela === 'quadro') return telaQuadro();
   if (!S.eu) return telaQuem();
   if (tela === 'pronto') return telaPronto();
   if (tela === 'obra') return telaObra();
   if (rascunho) return telaFinalizar();
   return telaInicio();
+}
+
+function abas() {
+  const q = tela === 'quadro';
+  return `<nav class="abas">
+    <button data-acao="ver-celular" ${!q ? 'aria-current="page"' : ''}>
+      ${icone('i-celular')} Apontar
+    </button>
+    <button data-acao="ver-quadro" ${q ? 'aria-current="page"' : ''}>
+      ${icone('i-predio')} Escritório
+    </button>
+  </nav>`;
+}
+
+/* Convite discreto para instalar, so enquanto roda dentro do navegador. */
+function faixaInstalar() {
+  if (instalado()) return '';
+  return `<button class="botao tracejado" data-acao="instalar">
+    ${icone('i-baixar')}
+    <span>Instalar na tela de início
+      <span class="obs">abre direto, sem procurar o link</span>
+    </span>
+  </button>`;
+}
+
+function telaInstalar() {
+  const passos = ehIOS() ? [
+    ['Toque em <b>Compartilhar</b>', 'i-compartilhar-ios', 'o quadradinho com a seta para cima, na barra de baixo do Safari'],
+    ['Role e toque em <b>Adicionar à Tela de Início</b>', 'i-mais-quadrado', ''],
+    ['Toque em <b>Adicionar</b>, no canto de cima', '', 'o ícone vermelho do Campo aparece junto com os outros aplicativos'],
+  ] : [
+    ['Toque nos <b>três pontinhos</b> do Chrome', 'i-tres-pontos', 'no canto de cima, à direita'],
+    ['Toque em <b>Instalar aplicativo</b>', 'i-baixar', 'em alguns aparelhos aparece como "Adicionar à tela inicial"'],
+    ['Confirme em <b>Instalar</b>', '', 'o ícone vermelho do Campo aparece junto com os outros aplicativos'],
+  ];
+
+  return `<main>
+    <button class="voltar" data-acao="ver-celular">${icone('i-voltar')} Voltar</button>
+    <h2>Instalar no celular</h2>
+    <p class="sub">${ehIOS() ? 'No iPhone' : 'No Android'} são três toques. Depois é só abrir pelo ícone.</p>
+    ${convite ? `<button class="botao gigante marca" data-acao="instalar-agora">
+        ${icone('i-baixar')} Instalar agora
+      </button>
+      <p class="dica" style="margin:0 0 18px">Ou faça na mão:</p>` : ''}
+    ${passos.map(([texto, ic, obs], i) => `
+      <div class="passo-instalar">
+        <span class="numero">${i + 1}</span>
+        <div>
+          <p>${texto}${ic ? ' ' + icone(ic) : ''}</p>
+          ${obs ? `<p class="dica">${obs}</p>` : ''}
+        </div>
+      </div>`).join('')}
+  </main>`;
 }
 
 /* 1 - quem e voce (uma vez so) */
@@ -210,6 +277,10 @@ function telaInicio() {
         <span>Estou saindo para uma obra
           <span class="obs">toque aqui ainda no pátio</span>
         </span>
+      </button>
+      ${faixaInstalar()}
+      <button class="voltar" data-acao="trocar-pessoa" style="margin:6px auto 0">
+        Não sou ${esc(S.eu)}
       </button>
     </main>`;
   }
@@ -430,6 +501,9 @@ function telaQuadro() {
       <div><span>obras ativas</span><b>${new Set(abertos.filter((e) => e.situacao === 'em_obra').map((e) => e.obra)).size}</b></div>
       <div><span>horas em curso</span><b>${horas.toFixed(1).replace('.', ',')}h</b></div>
     </div>
+    ${CAMPO_DEMO ? `<button class="voltar" data-acao="recomecar" style="margin:18px auto 0">
+      Recomeçar a demonstração
+    </button>` : ''}
   </main>`;
 }
 
@@ -455,7 +529,15 @@ document.addEventListener('click', (ev) => {
     'ver-quadro':  () => { tela = 'quadro'; },
     'inicio':      () => { tela = 'auto'; rascunho = null; },
 
-    'sou-eu': () => { S.eu = valor; gravar(); },
+    'sou-eu':        () => { S.eu = valor; gravar(); },
+    'trocar-pessoa': () => { S.eu = null; gravar(); },
+
+    'instalar': () => { tela = 'instalar'; },
+    'instalar-agora': () => {
+      if (!convite) return;
+      convite.prompt();
+      convite.userChoice.finally(() => { convite = null; tela = 'auto'; render(); });
+    },
 
     'vou-para':     () => { rascunho = null; modoObra = 'saindo';   tela = 'obra'; pedirLocalizacao(); },
     'chegar-agora': () => { rascunho = null; modoObra = 'chegando'; tela = 'obra'; pedirLocalizacao(); },
@@ -601,5 +683,18 @@ async function gravarNoSupabase(registro) {
 }
 
 /* ------------------------------------------------------------------ boot */
-if (new URLSearchParams(location.search).has('quadro')) tela = 'quadro';
+const params = new URLSearchParams(location.search);
+if (params.has('quadro')) tela = 'quadro';
+
 render();
+
+// Atalho do icone (segurar o app no Android): "Cheguei na obra".
+if (params.get('acao') === 'cheguei' && S.eu && !S.atual) {
+  modoObra = 'chegando';
+  tela = 'obra';
+  pedirLocalizacao();
+}
+
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}

@@ -2,11 +2,41 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#E84A56">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>Campo · Rodrigues Preventivos</title>
+<meta name="description" content="Apontamento de obra pela equipe da Rodrigues Preventivos.">
+
+<meta name="theme-color" content="#E84A56">
+<meta name="color-scheme" content="light">
+<link rel="manifest" href="manifest.json">
+
+<!-- iOS nao le o manifest: precisa destas quatro linhas para instalar direito -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Campo">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="icon" href="assets/icon-192.png">
+
+<!-- Telas de abertura do iOS (retrato) -->
+<link rel="apple-touch-startup-image" href="assets/splash-1179x2556.png"
+  media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)">
+<link rel="apple-touch-startup-image" href="assets/splash-1290x2796.png"
+  media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)">
+<link rel="apple-touch-startup-image" href="assets/splash-1170x2532.png"
+  media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)">
+<link rel="apple-touch-startup-image" href="assets/splash-1284x2778.png"
+  media="(device-width:428px) and (device-height:926px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)">
+<link rel="apple-touch-startup-image" href="assets/splash-1125x2436.png"
+  media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)">
+<link rel="apple-touch-startup-image" href="assets/splash-828x1792.png"
+  media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)">
+<link rel="apple-touch-startup-image" href="assets/splash-750x1334.png"
+  media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)">
+<link rel="apple-touch-startup-image" href="assets/splash-640x1136.png"
+  media="(device-width:320px) and (device-height:568px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)">
+
 <link rel="stylesheet" href="campo.css">
-<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 </head>
 <body>
 
@@ -56,9 +86,32 @@
   <symbol id="i-lista" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/>
   </symbol>
+  <symbol id="i-celular" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="6" y="2.5" width="12" height="19" rx="2.6"/><path d="M10.5 18.6h3"/>
+  </symbol>
+  <symbol id="i-predio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 21V5.5L13 3v18M13 21h7V9.5L13 8"/><path d="M7 8h3M7 12h3M7 16h3M16 12h1.5M16 16h1.5"/>
+  </symbol>
+  <symbol id="i-baixar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.5v11M8 11l4 3.5 4-3.5"/><path d="M4.5 17.5v2A1.5 1.5 0 0 0 6 21h12a1.5 1.5 0 0 0 1.5-1.5v-2"/>
+  </symbol>
+  <symbol id="i-compartilhar-ios" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3v12M8.5 6.2 12 3l3.5 3.2"/><path d="M6.5 11H5.2A1.2 1.2 0 0 0 4 12.2v7.6A1.2 1.2 0 0 0 5.2 21h13.6a1.2 1.2 0 0 0 1.2-1.2v-7.6A1.2 1.2 0 0 0 18.8 11H17.5"/>
+  </symbol>
+  <symbol id="i-mais-quadrado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3.5" y="3.5" width="17" height="17" rx="3.6"/><path d="M12 8.5v7M8.5 12h7"/>
+  </symbol>
+  <symbol id="i-tres-pontos" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/>
+  </symbol>
 </svg>
 
-<div id="app"></div>
+<div id="app">
+  <div class="abertura">
+    <img src="assets/marca-branca.png" alt="Rodrigues Preventivos" width="220">
+    <span>Campo</span>
+  </div>
+</div>
 
 <script src="campo.js"></script>
 </body>
