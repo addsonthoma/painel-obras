@@ -40,7 +40,7 @@ const OBRAS = [
 /* ------------------------------------------------------------- estado */
 const CHAVE = 'campo.v1';
 
-const vazio = () => ({ eu: null, atual: null, enviados: [], recentes: [] });
+const vazio = () => ({ eu: null, atual: null, enviados: [], recentes: [], sistema: null });
 
 function ler() {
   try { return Object.assign(vazio(), JSON.parse(localStorage.getItem(CHAVE) || '{}')); }
@@ -151,11 +151,25 @@ function obraMaisProxima(p) {
    mudam conforme o aparelho — o funcionario nao tem que descobrir sozinho. */
 let convite = null;   // evento beforeinstallprompt guardado
 
-const ehIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) ||
-  (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+function detectarSistema() {
+  const ua = navigator.userAgent;
+  // iPad moderno se anuncia como Macintosh; o que entrega e o toque na tela.
+  if (/iphone|ipad|ipod/i.test(ua)) return 'ios';
+  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return 'ios';
+  return 'android';
+}
+
+/* A deteccao acerta quase sempre, mas nao vale travar o funcionario num
+   passo a passo errado: S.sistema guarda a escolha manual e vence. */
+const sistema = () => S.sistema || detectarSistema();
+const ehIOS = () => sistema() === 'ios';
 
 const instalado = () => window.matchMedia('(display-mode: standalone)').matches ||
   navigator.standalone === true;
+
+/* Enquanto os apontamentos moram no aparelho, vale pedir ao navegador que
+   nao descarte o armazenamento quando a memoria apertar. */
+if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
 
 window.addEventListener('beforeinstallprompt', (ev) => {
   ev.preventDefault();
@@ -231,7 +245,15 @@ function telaInstalar() {
   return `<main>
     <button class="voltar" data-acao="ver-celular">${icone('i-voltar')} Voltar</button>
     <h2>Instalar no celular</h2>
-    <p class="sub">${ehIOS() ? 'No iPhone' : 'No Android'} são três toques. Depois é só abrir pelo ícone.</p>
+    <p class="sub">São três toques. Depois é só abrir pelo ícone.</p>
+    <div class="escolha-sistema">
+      <button data-acao="sistema" data-valor="ios" aria-pressed="${ehIOS()}">iPhone</button>
+      <button data-acao="sistema" data-valor="android" aria-pressed="${!ehIOS()}">Android</button>
+    </div>
+    <p class="dica" style="margin:0 0 16px">
+      ${S.sistema ? 'Escolhido por você.' : 'Detectado automaticamente.'}
+      Se as telas não baterem com o seu aparelho, toque no outro.
+    </p>
     ${convite ? `<button class="botao gigante marca" data-acao="instalar-agora">
         ${icone('i-baixar')} Instalar agora
       </button>
@@ -416,10 +438,12 @@ function passoObs() {
     <h2>Quer falar alguma coisa?</h2>
     <p class="sub">Material usado, o que ficou pendente, qualquer recado.</p>
     <button class="botao gigante escuro" data-acao="falar" style="margin-bottom:12px">
-      ${icone('i-microfone')} Falar
+      ${icone('i-microfone')} ${temDitado() ? 'Falar' : 'Falar ou escrever'}
     </button>
     <textarea id="obs" placeholder="Ou escreva aqui">${esc(rascunho.obs)}</textarea>
-    <p class="dica">Dica: o teclado do celular também tem um microfone.</p>
+    <p class="dica">${temDitado()
+      ? 'Toque no botão e fale normalmente.'
+      : 'O Safari do iPhone não transcreve sozinho: abra o teclado e toque no microfone dele.'}</p>
     <div class="avancar">
       <button class="botao gigante escuro" data-acao="enviar">
         ${icone('i-enviar')} Enviar
@@ -429,11 +453,24 @@ function passoObs() {
 }
 
 function telaPronto() {
+  const pendentes = S.enviados.filter((r) => !r.sincronizado).length;
+
+  let titulo = 'Enviado';
+  let recado = 'O escritório já está vendo.';
+
+  if (CAMPO_DEMO) {
+    titulo = 'Guardado';
+    recado = 'Estamos em teste: o apontamento ficou salvo neste celular e ainda não vai para o escritório.';
+  } else if (pendentes) {
+    titulo = 'Guardado';
+    recado = 'Sem sinal agora. Assim que pegar internet, sobe sozinho.';
+  }
+
   return `<main class="fim">
-    ${icone('i-ok')}
-    <h2>Enviado</h2>
-    <p>O escritório já está vendo.</p>
-    <div class="tela" style="padding-top:26px">
+    ${icone(CAMPO_DEMO || pendentes ? 'i-info' : 'i-ok')}
+    <h2>${titulo}</h2>
+    <p>${recado}</p>
+    <div style="padding-top:26px">
       <button class="botao gigante escuro" data-acao="inicio">Voltar ao início</button>
     </div>
   </main>`;
@@ -501,18 +538,43 @@ function telaQuadro() {
       <div><span>obras ativas</span><b>${new Set(abertos.filter((e) => e.situacao === 'em_obra').map((e) => e.obra)).size}</b></div>
       <div><span>horas em curso</span><b>${horas.toFixed(1).replace('.', ',')}h</b></div>
     </div>
+    ${guardadosNesteAparelho()}
     ${CAMPO_DEMO ? `<button class="voltar" data-acao="recomecar" style="margin:18px auto 0">
       Recomeçar a demonstração
     </button>` : ''}
   </main>`;
 }
 
+/* Enquanto nao ha banco, o unico lugar onde os apontamentos existem e o
+   proprio aparelho. Mostrar isso evita achar que o escritorio ja recebeu. */
+function guardadosNesteAparelho() {
+  if (!S.enviados.length) return '';
+
+  const linhas = S.enviados.slice(0, 8).map((r) => `
+    <div class="linha-equipe pendente">
+      ${icone(r.sincronizado ? 'i-ok' : 'i-celular')}
+      <div class="corpo">
+        <div class="obra">${esc(r.obra_texto || 'obra não informada')}</div>
+        <div class="gente">${esc((r.equipe || []).join(', '))}
+          ${r.chegou_em ? ' · ' + hhmm(r.chegou_em) : ''}${r.terminou_em ? ' às ' + hhmm(r.terminou_em) : ''}</div>
+      </div>
+      <div class="tempo"><span>${r.sincronizado ? 'no banco' : 'só aqui'}</span></div>
+    </div>`).join('');
+
+  return `<p class="secao">Guardado neste aparelho (${S.enviados.length})</p>
+    ${linhas}
+    <p class="dica">${CAMPO_DEMO
+      ? 'Em teste, nada sai do celular. Cada aparelho tem a sua própria lista.'
+      : 'Sobe sozinho quando houver internet.'}</p>`;
+}
+
+/* Exemplos ancorados na hora atual, nao num horario fixo: a demonstracao
+   precisa parecer plausivel a qualquer hora que o Henrique abrir. */
 function quadroExemplo() {
-  const hoje = new Date();
-  const as = (h, m) => new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), h, m).toISOString();
+  const atras = (min) => new Date(Date.now() - min * 60000).toISOString();
   return [
-    { obra: 'Laurentino', equipe: ['Pedro', 'Adeilson'], veiculo: 'Strada', desde: as(7, 30), situacao: 'em_obra' },
-    { obra: 'Phinia', equipe: ['Beto', 'Giovani'], veiculo: 'Uno', desde: as(9, 20), situacao: 'a_caminho' },
+    { obra: 'Laurentino', equipe: ['Pedro', 'Adeilson'], veiculo: 'Strada', desde: atras(197), situacao: 'em_obra' },
+    { obra: 'Phinia', equipe: ['Beto', 'Giovani'], veiculo: 'Uno', desde: atras(24), situacao: 'a_caminho' },
   ];
 }
 
@@ -533,6 +595,7 @@ document.addEventListener('click', (ev) => {
     'trocar-pessoa': () => { S.eu = null; gravar(); },
 
     'instalar': () => { tela = 'instalar'; },
+    'sistema':  () => { S.sistema = valor; gravar(); },
     'instalar-agora': () => {
       if (!convite) return;
       convite.prompt();
@@ -619,8 +682,10 @@ function confirmarObra(obra, origem) {
   tela = 'auto';
 }
 
-/* Ditado: usa o reconhecimento do navegador quando existe; se nao,
-   manda o funcionario para o teclado, que tem microfone proprio. */
+/* Ditado: usa o reconhecimento do navegador quando existe; se nao — que e o
+   caso do Safari no iPhone — manda para o teclado, que tem microfone proprio. */
+const temDitado = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
 function ouvir(aoTerminar) {
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Rec) {
@@ -660,16 +725,38 @@ async function enviar() {
     apontado_por_nome: S.eu,
   };
 
+  registro.local_id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  registro.sincronizado = false;
+
   S.enviados.unshift(registro);
   S.atual = null;
   rascunho = null;
   gravar();
   tela = 'pronto';
 
-  if (!CAMPO_DEMO) {
-    try { await gravarNoSupabase(registro); }
-    catch { /* fica na fila em S.enviados e sobe depois */ }
+  subirPendentes();
+}
+
+/* Fila: o apontamento e gravado no aparelho primeiro e so depois tenta subir.
+   Nenhum registro se perde por falta de sinal — sobe na proxima abertura ou
+   quando o celular reencontrar a internet. */
+async function subirPendentes() {
+  if (CAMPO_DEMO || !navigator.onLine) return;
+
+  const fila = S.enviados.filter((r) => !r.sincronizado);
+  if (!fila.length) return;
+
+  let mudou = false;
+  for (const registro of fila) {
+    try {
+      await gravarNoSupabase(registro);
+      registro.sincronizado = true;
+      mudou = true;
+    } catch {
+      break;   // sem rede ou banco fora: tenta tudo de novo depois
+    }
   }
+  if (mudou) { gravar(); render(); }
 }
 
 /* Producao. So roda com CAMPO_DEMO = false e apos a migracao_campo.sql. */
@@ -677,8 +764,10 @@ async function gravarNoSupabase(registro) {
   const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
   const sb = createClient(window.CAMPO_URL, window.CAMPO_ANON);
   const { data: { user } } = await sb.auth.getUser();
+
+  const { local_id, sincronizado, ...campos } = registro;   // controle local, nao vai ao banco
   const { error } = await sb.from('obra_apontamentos')
-    .insert({ ...registro, apontado_por: user?.id ?? null });
+    .insert({ ...campos, apontado_por: user?.id ?? null });
   if (error) throw error;
 }
 
@@ -694,6 +783,9 @@ if (params.get('acao') === 'cheguei' && S.eu && !S.atual) {
   tela = 'obra';
   pedirLocalizacao();
 }
+
+subirPendentes();
+addEventListener('online', subirPendentes);
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

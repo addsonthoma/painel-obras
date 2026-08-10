@@ -28,7 +28,12 @@
   --baixo:env(safe-area-inset-bottom);
 }
 
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+*{
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-touch-callout:none;        /* iOS: sem menu de "copiar" ao segurar */
+  touch-action:manipulation;         /* mata o atraso de 300ms do duplo-toque */
+}
 
 html{height:100%}
 body{
@@ -165,6 +170,16 @@ textarea:focus{outline:none; border-color:var(--marca)}
 .voltar svg{width:18px; height:18px}
 
 /* ------------------------------------------------------------- instalar */
+.escolha-sistema{
+  display:grid; grid-template-columns:1fr 1fr; gap:8px;
+  background:#e7eaf1; border-radius:12px; padding:4px; margin:0 0 8px;
+}
+.escolha-sistema button{
+  background:none; border:none; border-radius:9px; padding:11px 4px;
+  font-size:16px; font-weight:500; color:var(--tinta-suave);
+}
+.escolha-sistema button[aria-pressed="true"]{background:var(--card); color:var(--tinta)}
+
 .passo-instalar{
   display:flex; gap:14px; align-items:flex-start;
   background:var(--card); border:1px solid var(--linha); border-radius:var(--raio);
