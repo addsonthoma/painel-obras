@@ -95,6 +95,7 @@
       <button class="aba" data-aba="agenda">📅 Agenda</button>
       <button class="aba" data-aba="pendencias">Pendências <span class="badge-num" id="num-pend"></span></button>
       <button class="aba so-admin" data-aba="cobrancas">Cobranças <span class="badge-num" id="num-cob"></span></button>
+      <button class="aba so-admin" data-aba="concluidas">✅ Concluídas <span class="badge-num" id="num-conc"></span></button>
       <button class="aba so-admin" data-aba="resultados">Resultados</button>
       <button class="aba so-admin" data-aba="equipe">Equipe</button>
     </nav>
@@ -166,6 +167,19 @@
         <div id="cob-vazio" class="vazio hidden">Nada para cobrar no momento.</div>
       </section>
 
+      <!-- ABA CONCLUÍDAS (100% concluídas E pagas — o arquivo da empresa) -->
+      <section id="view-concluidas" class="view hidden">
+        <h2 class="view-titulo">Obras concluídas <small>(100% executadas e já pagas)</small></h2>
+        <div id="conc-resumo"></div>
+        <div class="barra-acoes">
+          <div class="barra-dir" style="margin-left:0">
+            <input type="search" id="busca-conc" placeholder="Buscar cliente / endereço / OR…" />
+          </div>
+        </div>
+        <div id="lista-concluidas" class="lista-obras"></div>
+        <div id="conc-vazio" class="vazio hidden">Nenhuma obra concluída e paga ainda.</div>
+      </section>
+
       <!-- ABA RESULTADOS (histórico semanal de cobranças) -->
       <section id="view-resultados" class="view hidden">
         <h2 class="view-titulo">Resultados por semana <small>(cobranças enviadas · segunda a domingo)</small></h2>
@@ -200,6 +214,12 @@
           <h2 class="view-titulo">Monitoramento de edificações <small>(e-SCI / Bombeiros)</small></h2>
           <div class="barra-dir"><button class="btn btn-primary so-admin" id="btn-novo-cliente-mon">+ Novo cliente</button></div>
         </div>
+        <div id="mon-stats"></div>
+        <div class="barra-acoes">
+          <div class="filtros" id="mon-filtros"></div>
+          <div class="barra-dir"><input type="search" id="busca-mon" placeholder="Buscar RE, edificação ou cliente…" /></div>
+        </div>
+        <div id="mon-selo"></div>
         <div id="lista-monitor" class="lista-monitor"></div>
         <div id="monitor-vazio" class="vazio hidden">Nenhum cliente monitorado ainda.</div>
       </div>

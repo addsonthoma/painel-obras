@@ -199,6 +199,7 @@ def main():
     s = sessao()
     agora = datetime.now(timezone(timedelta(hours=-3))).isoformat(timespec="seconds")
     novos_total = 0
+    falhas = []
     for re in res:
         r = coletar_re(s, re)
         if r == "EXPIRED":
@@ -224,12 +225,25 @@ def main():
         if r.get("numg") and not re.get("numg_edificacao"): upd["numg_edificacao"] = r["numg"]
         if r.get("nome") and not re.get("nome_edificacao"): upd["nome_edificacao"] = r["nome"]
         if r.get("cidade"): upd["cidade"] = r["cidade"]
-        sb("PATCH", "monitor_res?id=eq.%s" % re["id"], upd)
+        # CONFIRMA a gravação: sem isso o coletor dizia "OK" mesmo quando o PATCH
+        # falhava, e a RE ficava eternamente sem numg/funcionamento no painel.
+        gravou = sb("PATCH", "monitor_res?id=eq.%s" % re["id"], upd, "return=representation")
+        if not gravou:
+            falhas.append(re["re_codigo"])
+            print("!! %-14s LIDO do e-SCI, mas NAO GRAVOU no banco (tentando de novo)" % re["re_codigo"])
+            time.sleep(1.5)
+            gravou = sb("PATCH", "monitor_res?id=eq.%s" % re["id"], upd, "return=representation")
+            if gravou:
+                falhas.pop(); print("   -> segunda tentativa OK")
         flag = "  <<< NOVO!" if novos else ""
-        print("OK %-14s autos=%d (novos=%d) func.validade=%s%s" % (
-            re["re_codigo"], len(r["autos"]), novos, r.get("func_validade") or "-", flag))
+        if gravou:
+            print("OK %-14s autos=%d (novos=%d) func.validade=%s%s" % (
+                re["re_codigo"], len(r["autos"]), novos, r.get("func_validade") or "-", flag))
         time.sleep(0.4)
     print("\nFIM — %d auto(s) novo(s) no total. (%s)" % (novos_total, agora))
+    if falhas:
+        print("[!] %d RE NAO GRAVARAM: %s" % (len(falhas), ", ".join(falhas)))
+        print("    Rode de novo; se insistir, confira a chave em privado/.env.")
 
 if __name__ == "__main__":
     main()

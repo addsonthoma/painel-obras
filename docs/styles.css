@@ -479,6 +479,14 @@ button.kpi-tile:hover{transform:translateY(-2px); box-shadow:var(--sombra)}
 #leads-frame{width:100%; height:calc(100vh - 104px); border:0; display:block; background:#0e1117}
 @media (max-width:640px){ #leads-frame{height:calc(100vh - 156px)} .modulo{font-size:.9rem; padding:8px 11px} }
 
+/* selo de confiabilidade do monitoramento */
+.mon-selo{display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:.82rem;
+  background:var(--ok-bg); color:#12673a; border-radius:9px; padding:8px 12px; margin:0 0 14px}
+.mon-selo.alerta{background:var(--aviso-bg); color:#7a5a00}
+.mon-selo small{color:inherit; opacity:.75}
+#busca-mon{padding:9px 12px; border:1px solid var(--linha); border-radius:10px; min-width:250px; font-size:.92rem}
+#mon-stats{margin-bottom:14px}
+
 /* monitoramento */
 .lista-monitor{display:flex; flex-direction:column; gap:16px}
 .cliente-mon{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:16px}

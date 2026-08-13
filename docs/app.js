@@ -56,8 +56,9 @@ const state = {
   renovacoes:[], renovErro:null, buscaRenov:'', fRenovDias:'', fRenovStatus:'', fRenovEmail:'',
   metaCobranca:100000,
   agenda:[], agendaErro:null, agRef:new Date(), agModo:'semana', buscaAg:'',
+  filtroMon:'todos', buscaMon:'',
   modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
-  abaOrc:'pendente', filtroOrc:'todos', buscaOrc:'',
+  abaOrc:'pendente', filtroOrc:'todos', buscaOrc:'', buscaConc:'',
   modalAberto:false,
 };
 
@@ -303,7 +304,7 @@ $('#modal-fundo').addEventListener('click', e=>{ if(e.target.id==='modal-fundo')
    RENDER
    ===================================================================== */
 function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias(); renderAgenda();
-  if(state.isAdmin){ renderCobrancas(); renderEquipe(); renderRenovacoes(); renderPainelObras(); renderMetaCobranca(); renderResultados(); }
+  if(state.isAdmin){ renderCobrancas(); renderConcluidas(); renderEquipe(); renderRenovacoes(); renderPainelObras(); renderMetaCobranca(); renderResultados(); }
   if(state.isComercial) renderOrcamentos(); }
 
 function renderContadores(){
@@ -388,6 +389,51 @@ function renderPendencias(){
   $('#pend-vazio').classList.toggle('hidden', arr.length>0);
   ligarCards('#lista-pendencias');
 }
+
+/* ---- Obras concluídas: 100% executadas E pagas ----
+   Antes, ao marcar "pago", a obra sumia da aba Cobranças (o filtro padrão é
+   pendentes) e não sobrava lugar nenhum para ela. Aqui é o arquivo. */
+function obrasConcluidasPagas(){
+  return state.obras.filter(o=>{
+    const f=state.financeiro[o.id];
+    return o.status_execucao==='concluida' && f && f.status_cobranca==='pago';
+  });
+}
+function renderConcluidas(){
+  const el=$('#lista-concluidas'); if(!el) return;
+  let arr=obrasConcluidasPagas();
+  $('#num-conc').textContent = arr.length||'';
+  const q=(state.buscaConc||'').trim().toLowerCase();
+  if(q) arr=arr.filter(o=>[o.cliente,o.endereco,o.orcamento_qs].filter(Boolean).join(' ').toLowerCase().includes(q));
+  arr.sort((a,b)=> new Date(state.financeiro[b.id]?.pago_em||b.concluida_em||0)
+                 - new Date(state.financeiro[a.id]?.pago_em||a.concluida_em||0));
+  const total=arr.reduce((s,o)=>{ const f=state.financeiro[o.id]; return s+Number(f?.valor_cobrado??f?.valor_total??0); },0);
+  const box=$('#conc-resumo');
+  if(box){ box.className='kpi-row'; box.innerHTML=
+    `<div class="kpi-tile"><div class="kpi-val">${arr.length}</div><div class="kpi-lbl"><i class="kpi-dot verde"></i>Obras entregues e pagas</div><div class="kpi-n">${q?'no filtro atual':'no total'}</div></div>
+     <div class="kpi-tile"><div class="kpi-val vlr">${moedaCompacta(total)}</div><div class="kpi-lbl"><i class="kpi-dot verde"></i>Total recebido</div><div class="kpi-n">soma dessas obras</div></div>`; }
+  el.innerHTML=arr.map(o=>{
+    const f=state.financeiro[o.id]||{};
+    const quando=f.pago_em||o.concluida_em;
+    return `<div class="card-obra ${classeServico(o)}" data-id="${o.id}">
+      <div class="card-topo">
+        <div><div class="card-cliente">${esc(o.cliente)} ${o.avulsa?'<span class="tag-avulsa">avulsa</span>':''}</div>
+          ${o.endereco?`<div class="card-end">${esc(o.endereco)}</div>`:''}
+          ${o.orcamento_qs?`<div class="card-or">Orç. ${esc(o.orcamento_qs)}</div>`:''}</div>
+        <span class="cob-badge cob-pago">Pago</span></div>
+      <div class="servicos-chips">${(o.obra_servicos||[]).map(s=>`<span class="chip-serv ${s.servico}">${esc(SERVICOS[s.servico]?.label||s.servico)}</span>`).join('')}</div>
+      <div class="card-prazo">💰 <span class="vlr">${moeda(f.valor_cobrado??f.valor_total)}</span>
+        <small>pago em ${dataBR(quando)}</small></div>
+      ${o.concluida_por_nome?`<div class="card-equipe">Concluída por ${esc(o.concluida_por_nome)}</div>`:''}
+    </div>`;
+  }).join('');
+  $('#conc-vazio').classList.toggle('hidden', arr.length>0);
+  el.querySelectorAll('.card-obra').forEach(c=>c.addEventListener('click',()=>{
+    const ob=state.obras.find(x=>x.id===c.dataset.id);
+    if(ob?.avulsa) formCobrancaAvulsa(ob); else abrirObra(c.dataset.id);
+  }));
+}
+$('#busca-conc') && $('#busca-conc').addEventListener('input', e=>{ state.buscaConc=e.target.value; renderConcluidas(); });
 
 function renderCobrancas(){
   let arr=state.obras.filter(o=>{ const f=state.financeiro[o.id]; return f && f.status_cobranca && f.status_cobranca!=='nao_aplicavel'; });
@@ -932,6 +978,7 @@ function formMembro(m){
    MÓDULO MONITORAMENTO (edificações de clientes no e-SCI / Bombeiros)
    ===================================================================== */
 $('#btn-novo-cliente-mon') && $('#btn-novo-cliente-mon').addEventListener('click', ()=>formClienteMon(null));
+$('#busca-mon') && $('#busca-mon').addEventListener('input', e=>{ state.buscaMon=e.target.value; renderMonitor(); });
 
 async function carregarMonitor(){
   const el=$('#lista-monitor'); if(!el.innerHTML) el.innerHTML='<div class="vazio">Carregando…</div>';
@@ -947,22 +994,95 @@ function funcStatus(re){
   let v=null;
   if(re.funcionamento_validade) v=new Date(re.funcionamento_validade+'T00:00:00');
   else if(re.funcionamento_data) v=_addAnos(re.funcionamento_data,1);
-  if(!v) return {txt:'Funcionamento: não informado', cls:'cinza'};
+  // sem funcionamento não é falha nossa: é edificação que ainda não teve
+  // funcionamento emitido/deferido no e-SCI (conferido na fonte).
+  if(!v) return {txt:'Sem funcionamento emitido', cls:'cinza', dias:null};
   const dias=_diasDe(v);
-  if(dias<0) return {txt:`⚠ Funcionamento VENCIDO há ${-dias} dias`, cls:'vermelho'};
-  return {txt:`Funcionamento vence em ${dias} dias (${dataBR(_iso(v))})`, cls: dias<=30?'vermelho':dias<=90?'ambar':'verde'};
+  if(dias<0) return {txt:`⚠ Funcionamento VENCIDO há ${-dias} dias`, cls:'vermelho', dias};
+  return {txt:`Funcionamento vence em ${dias} dias (${dataBR(_iso(v))})`, cls: dias<=30?'vermelho':dias<=90?'ambar':'verde', dias};
 }
 function manutStatus(re){
-  if(!re.ultima_manutencao) return {txt:'Manutenção: a agendar', cls:'cinza'};
+  if(!re.ultima_manutencao) return {txt:'Manutenção: sem registro', cls:'cinza', dias:null};
   const p=_addMeses(re.ultima_manutencao,5), dias=_diasDe(p);
-  if(dias<0) return {txt:`🔧 Manutenção vencida há ${-dias} dias`, cls:'vermelho'};
-  return {txt:`Próx. manutenção em ${dias} dias (${dataBR(_iso(p))})`, cls: dias<=15?'vermelho':dias<=45?'ambar':'verde'};
+  if(dias<0) return {txt:`🔧 Manutenção vencida há ${-dias} dias`, cls:'vermelho', dias};
+  return {txt:`Próx. manutenção em ${dias} dias (${dataBR(_iso(p))})`, cls: dias<=15?'vermelho':dias<=45?'ambar':'verde', dias};
 }
+/* todas as RE (achatado), com o cliente junto — base dos KPIs, busca e filtros */
+function monTodasRE(){
+  const out=[];
+  (state.monitor||[]).forEach(c=>(c.monitor_res||[]).forEach(re=>out.push({re, cli:c})));
+  return out;
+}
+function monAutosAbertos(re){ return (re.monitor_autos||[]).filter(a=>!a.resolvido); }
+/* ---- KPIs, selo de atualização, busca e filtros ---- */
+function renderMonStats(){
+  const box=$('#mon-stats'); if(!box) return;
+  const todas=monTodasRE();
+  const comAuto=todas.filter(x=>monAutosAbertos(x.re).length);
+  const novos=todas.reduce((s,x)=>s+monAutosAbertos(x.re).filter(a=>a.novo).length,0);
+  const venc=todas.filter(x=>{ const f=funcStatus(x.re); return f.dias!=null && f.dias<0; });
+  const vencendo=todas.filter(x=>{ const f=funcStatus(x.re); return f.dias!=null && f.dias>=0 && f.dias<=90; });
+  const tile=(n,lbl,cor,sub)=>`<div class="kpi-tile"><div class="kpi-val">${n}</div>
+    <div class="kpi-lbl"><i class="kpi-dot ${cor}"></i>${lbl}</div><div class="kpi-n">${sub}</div></div>`;
+  box.className='kpi-row';
+  box.innerHTML =
+    tile(todas.length,'Edificações','info',`${(state.monitor||[]).length} cliente(s)`)+
+    tile(comAuto.length,'Com auto aberto','rojo',`${novos} auto(s) novo(s)`)+
+    tile(venc.length,'Funcionamento vencido','rojo','regularizar já')+
+    tile(vencendo.length,'Vence em até 90 dias','ambar','avisar contabilidade');
+
+  // selo de confiabilidade: quando o e-SCI foi consultado pela última vez
+  const selo=$('#mon-selo'); if(!selo) return;
+  const datas=todas.map(x=>x.re.ultima_verificacao).filter(Boolean).sort();
+  if(!datas.length){ selo.className='mon-selo alerta'; selo.innerHTML='⚠ Nenhuma edificação foi consultada no e-SCI ainda.'; return; }
+  const ult=new Date(datas[datas.length-1]);
+  const h=Math.floor((Date.now()-ult)/36e5);
+  const faltando=todas.filter(x=>!x.re.ultima_verificacao).length;
+  const velho=h>72;
+  selo.className='mon-selo'+(velho||faltando?' alerta':'');
+  selo.innerHTML=`${velho||faltando?'⚠':'✓'} e-SCI consultado ${h<1?'agora há pouco':(h<24?`há ${h}h`:`há ${Math.floor(h/24)} dia(s)`)}`
+    +` <small>(${ult.toLocaleString('pt-BR')})</small>`
+    +(faltando?` — <b>${faltando} edificação(ões) ainda não consultada(s)</b>`:'')
+    +` · a verificação roda sozinha a cada 2 dias`;
+}
+function renderMonFiltros(){
+  const wrap=$('#mon-filtros'); if(!wrap) return;
+  const def=[['todos','Todas'],['auto','Com auto aberto'],['vencido','Func. vencido'],['vencendo','Vence ≤90d'],['ok','Em dia']];
+  wrap.innerHTML=def.map(([k,l])=>`<button class="chip-filtro ${state.filtroMon===k?'ativo':''}" data-f="${k}">${l}</button>`).join('');
+  wrap.querySelectorAll('.chip-filtro').forEach(c=>c.onclick=()=>{ state.filtroMon=c.dataset.f; renderMonitor(); });
+}
+function monPassaFiltro(re){
+  const f=funcStatus(re), autos=monAutosAbertos(re);
+  switch(state.filtroMon){
+    case 'auto': return autos.length>0;
+    case 'vencido': return f.dias!=null && f.dias<0;
+    case 'vencendo': return f.dias!=null && f.dias>=0 && f.dias<=90;
+    case 'ok': return autos.length===0 && (f.dias==null || f.dias>90);
+    default: return true;
+  }
+}
+function monPassaBusca(re, cli){
+  const q=(state.buscaMon||'').trim().toLowerCase(); if(!q) return true;
+  return [re.re_codigo, re.nome_edificacao, re.cidade, re.endereco, cli.nome]
+    .filter(Boolean).join(' ').toLowerCase().includes(q);
+}
+
 function renderMonitor(){
   const el=$('#lista-monitor');
+  renderMonStats(); renderMonFiltros();
   $('#monitor-vazio').classList.toggle('hidden', state.monitor.length>0);
+  let algum=false;
   el.innerHTML=state.monitor.map(c=>{
-    const res=(c.monitor_res||[]).slice().sort((a,b)=>(a.cidade||'').localeCompare(b.cidade||''));
+    const res=(c.monitor_res||[]).filter(re=>monPassaFiltro(re) && monPassaBusca(re,c))
+      // mais crítico primeiro: com auto aberto, depois funcionamento mais perto de vencer
+      .sort((a,b)=>{
+        const aa=monAutosAbertos(a).length?0:1, bb=monAutosAbertos(b).length?0:1;
+        if(aa!==bb) return aa-bb;
+        const fa=funcStatus(a).dias??9e5, fb=funcStatus(b).dias??9e5;
+        return fa-fb;
+      });
+    if(!res.length) return '';
+    algum=true;
     const linhas=res.map(re=>{
       const autos=(re.monitor_autos||[]).filter(a=>!a.resolvido);
       const novos=autos.filter(a=>a.novo).length;
@@ -976,7 +1096,7 @@ function renderMonitor(){
         <div class="re-badges"><span class="dias urg-${f.cls}">${f.txt}</span><span class="dias urg-${m.cls}">${m.txt}</span>${alerta}</div>
         ${autosTxt}
       </div>`;
-    }).join('') || '<div class="card-end" style="padding:6px 2px">Nenhuma RE cadastrada.</div>';
+    }).join('');
     return `<div class="cliente-mon">
       <div class="cliente-mon-top">
         <div><div class="cliente-nome">${esc(c.nome)}</div>
@@ -985,6 +1105,11 @@ function renderMonitor(){
       </div>
       <div class="re-list">${linhas}</div></div>`;
   }).join('');
+  if(state.monitor.length && !algum){
+    el.innerHTML=`<div class="vazio">Nenhuma edificação com esse filtro/busca.
+      <button class="btn btn-ghost btn-sm" id="mon-limpar">limpar</button></div>`;
+    $('#mon-limpar').onclick=()=>{ state.filtroMon='todos'; state.buscaMon=''; $('#busca-mon').value=''; renderMonitor(); };
+  }
   el.querySelectorAll('.re-row').forEach(r=>r.onclick=()=>abrirRE(r.dataset.id));
   el.querySelectorAll('.js-add-re').forEach(b=>b.onclick=ev=>{ev.stopPropagation(); formRE(b.dataset.c,null);});
   el.querySelectorAll('.js-edit-cli').forEach(b=>b.onclick=ev=>{ev.stopPropagation(); formClienteMon(state.monitor.find(c=>c.id===b.dataset.c));});
