@@ -1007,6 +1007,16 @@ function manutStatus(re){
   if(dias<0) return {txt:`🔧 Manutenção vencida há ${-dias} dias`, cls:'vermelho', dias};
   return {txt:`Próx. manutenção em ${dias} dias (${dataBR(_iso(p))})`, cls: dias<=15?'vermelho':dias<=45?'ambar':'verde', dias};
 }
+/* idade do dado: quando aquele item foi consultado no e-SCI pela última vez.
+   Serve para saber, item a item, se o que está na tela é fresco ou velho. */
+function idadeColeta(iso){
+  if(!iso) return {txt:'nunca consultado', cls:'vermelho', quando:'—', horas:null};
+  const d=new Date(iso), h=Math.floor((Date.now()-d)/36e5);
+  const txt = h<1 ? 'agora há pouco' : (h<24 ? `há ${h}h` : `há ${Math.floor(h/24)} dia${Math.floor(h/24)>1?'s':''}`);
+  const cls = h>168 ? 'vermelho' : (h>72 ? 'ambar' : 'verde');
+  return {txt, cls, quando:d.toLocaleString('pt-BR'), horas:h};
+}
+
 /* todas as RE (achatado), com o cliente junto — base dos KPIs, busca e filtros */
 function monTodasRE(){
   const out=[];
@@ -1086,14 +1096,15 @@ function renderMonitor(){
     const linhas=res.map(re=>{
       const autos=(re.monitor_autos||[]).filter(a=>!a.resolvido);
       const novos=autos.filter(a=>a.novo).length;
-      const f=funcStatus(re), m=manutStatus(re);
+      const f=funcStatus(re), m=manutStatus(re), v=idadeColeta(re.ultima_verificacao);
       const alerta=autos.length?`<span class="status-badge st-pendente_material">🔴 ${autos.length} auto(s)${novos?' • '+novos+' novo(s)':''}</span>`:'';
       const autosTxt=autos.length?`<div class="re-autos">${autos.map(a=>`<div class="re-auto-li">
         <span class="chip-serv ${a.tipo==='MUL'?'SDAI':'MANUT_SHP'}">${esc(a.tipo)}</span> <b>${esc(a.codigo)}</b>${a.valor!=null?' · <span class="vlr">'+moeda(a.valor)+'</span>':''}
         ${a.exigencia?'— '+esc(a.exigencia.length>90?a.exigencia.slice(0,90)+'…':a.exigencia):''}${a.prazo?' · <small>prazo '+esc(a.prazo)+'</small>':''}</div>`).join('')}</div>`:'';
       return `<div class="re-row" data-id="${re.id}">
         <div class="re-top"><b>${esc(re.re_codigo)}</b> <span class="re-nome">${esc(re.nome_edificacao||'(sem nome)')}</span> <small>${esc(re.cidade||'')}</small></div>
-        <div class="re-badges"><span class="dias urg-${f.cls}">${f.txt}</span><span class="dias urg-${m.cls}">${m.txt}</span>${alerta}</div>
+        <div class="re-badges"><span class="dias urg-${f.cls}">${f.txt}</span><span class="dias urg-${m.cls}">${m.txt}</span>${alerta}
+          <span class="dias urg-${v.cls} sel-coleta" title="Consultado no e-SCI em ${esc(v.quando)}">🕐 ${v.txt}</span></div>
         ${autosTxt}
       </div>`;
     }).join('');
@@ -1174,7 +1185,10 @@ function abrirRE(id){
         ${!a.resolvido?`<button class="btn btn-ok btn-sm js-resolver" data-id="${a.id}">Resolver</button>`:''}</div>`:''}</div>`).join('')
     : '<span class="card-end">Nenhum auto encontrado. O coletor checa o e-SCI a cada 2 dias.</span>';
   html+=`</div>`;
-  if(re.ultima_verificacao) html+=`<p class="det-sub">Última checagem do e-SCI: ${new Date(re.ultima_verificacao).toLocaleString('pt-BR')}</p>`;
+  const vv=idadeColeta(re.ultima_verificacao);
+  html+=`<div class="mon-selo${vv.cls==='verde'?'':' alerta'}" style="margin-top:12px">
+    ${vv.cls==='verde'?'✓':'⚠'} Consultado no e-SCI <b>${vv.txt}</b> <small>(${esc(vv.quando)})</small>
+    ${vv.horas!=null&&vv.horas>72?' — dado pode estar desatualizado':''}</div>`;
   if(state.isAdmin) html+=`<div class="form-acoes"><button class="btn btn-ghost" id="re-del">Excluir RE</button><button class="btn btn-sec" id="re-edit">Editar RE</button></div>`;
   abrirModal(html);
   $('#re-func') && ($('#re-func').onclick=async()=>{ const v=prompt('Data de emissão do último funcionamento (AAAA-MM-DD):', re.funcionamento_data||''); if(v===null)return;
