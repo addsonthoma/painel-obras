@@ -345,6 +345,22 @@ button.kpi-tile:hover{transform:translateY(-2px); box-shadow:var(--sombra)}
 .kpi-dot.info{background:var(--info)} .kpi-dot.ambar{background:var(--aviso)}
 .kpi-dot.roxo{background:#7a3bd0} .kpi-dot.verde{background:var(--ok)}
 .kpi-dot.rojo{background:var(--perigo)} .kpi-dot.cinza{background:#aeb6c4}
+/* aviso da busca unificada (orçamentos) */
+.busca-aviso{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px;
+  background:var(--info-bg); color:#1b4fb8; border-radius:10px; padding:9px 13px; font-size:.86rem}
+.busca-aviso b{color:#123a86}
+.busca-aviso .btn{margin-left:auto; background:#fff}
+/* obras já existentes achadas pela busca de orçamentos */
+.obras-achadas{background:var(--aviso-bg); border:1px solid #f0dca8; border-radius:12px;
+  padding:11px 13px; margin-bottom:14px}
+.oa-tit{font-size:.84rem; font-weight:700; color:#7a5a00; margin-bottom:8px}
+.oa-lista{display:flex; gap:7px; flex-wrap:wrap}
+.oa-card{display:inline-flex; align-items:center; gap:8px; background:#fff; border:1px solid var(--linha);
+  border-radius:9px; padding:7px 11px; cursor:pointer; font:inherit; color:inherit; text-align:left;
+  transition:transform .12s, box-shadow .12s}
+.oa-card:hover{transform:translateY(-2px); box-shadow:var(--sombra)}
+.oa-nome{font-weight:700; font-size:.84rem}
+.oa-or{font-size:.74rem; color:var(--tinta-suave); font-weight:600}
 .tag-avulsa{font-size:.62rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
   background:#ece8fb; color:#5b3bbd; padding:2px 7px; border-radius:20px; vertical-align:middle}
 .card-valor{font-size:.8rem; font-weight:800; color:var(--tinta); background:#eef1f6;

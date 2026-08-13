@@ -1160,20 +1160,73 @@ function renderListaOrc(){
     el.innerHTML=`<div class="vazio">Módulo indisponível — rode a migração <code>sql/migracao_orcamentos.sql</code> no Supabase.<br><small>${esc(state.orcErro)}</small></div>`;
     vazio.classList.add('hidden'); return;
   }
-  let arr=state.orcamentos.filter(o=>o.status===ORC_ABA_STATUS[state.abaOrc]);
-  if(state.abaOrc==='aberto' && state.filtroOrc==='contato') arr=arr.filter(o=>orcFollowInfo(o)?.dias<=0);
-  if(state.buscaOrc){ const q=state.buscaOrc; arr=arr.filter(o=>(o.cliente+' '+(o.origem||'')+' '+(o.orcamento_qs||'')+' '+(o.contato_nome||'')).toLowerCase().includes(q)); }
-  // ordena: pendentes os mais antigos primeiro; em aberto por follow-up mais urgente; fechados/perdidos por data desc
-  if(state.abaOrc==='aberto'){
-    arr.sort((a,b)=> (orcFollowInfo(a)?.dias??1e8)-(orcFollowInfo(b)?.dias??1e8));
-  } else if(state.abaOrc==='pendente'){
-    arr.sort((a,b)=> new Date(a.criado_em||0)-new Date(b.criado_em||0));
+  const q=(state.buscaOrc||'').trim().toLowerCase();
+  const aviso=$('#orc-busca-aviso');
+  let arr;
+
+  if(q){
+    // BUSCA UNIFICADA: com texto digitado, procura em TODAS as abas
+    // (pendentes, em aberto, fechados e perdidos) de uma vez.
+    arr=state.orcamentos.filter(o=>orcCasaBusca(o,q));
+    const ordem={orcar:0, enviado:1, ganho:2, perdido:3};
+    arr.sort((a,b)=> (ordem[a.status]??9)-(ordem[b.status]??9)
+      || new Date(b.criado_em||0)-new Date(a.criado_em||0));
+    if(aviso){
+      const c={orcar:0,enviado:0,ganho:0,perdido:0};
+      arr.forEach(o=>{ if(c[o.status]!=null) c[o.status]++; });
+      const partes=[[c.orcar,'pendente'],[c.enviado,'em aberto'],[c.ganho,'fechado'],[c.perdido,'perdido']]
+        .filter(([n])=>n>0).map(([n,l])=>`<b>${n}</b> ${l}${n>1&&l!=='em aberto'?'s':''}`);
+      aviso.className='busca-aviso';
+      aviso.innerHTML=`🔎 <b>${arr.length}</b> resultado${arr.length===1?'':'s'} para “${esc(state.buscaOrc.trim())}” em todas as abas`
+        +(partes.length?` — ${partes.join(' · ')}`:'')
+        +` <button class="btn btn-ghost btn-sm" id="orc-limpar-busca">limpar</button>`;
+      $('#orc-limpar-busca').onclick=()=>{ state.buscaOrc=''; $('#busca-orc').value=''; renderOrcamentos(); $('#busca-orc').focus(); };
+    }
+    renderObrasAchadas(q);
   } else {
-    arr.sort((a,b)=> new Date(b.ganho_em||b.perdido_em||b.criado_em||0)-new Date(a.ganho_em||a.perdido_em||a.criado_em||0));
+    if(aviso){ aviso.className='hidden'; aviso.innerHTML=''; }
+    renderObrasAchadas('');
+    arr=state.orcamentos.filter(o=>o.status===ORC_ABA_STATUS[state.abaOrc]);
+    if(state.abaOrc==='aberto' && state.filtroOrc==='contato') arr=arr.filter(o=>orcFollowInfo(o)?.dias<=0);
+    // ordena: pendentes os mais antigos primeiro; em aberto por follow-up mais urgente; fechados/perdidos por data desc
+    if(state.abaOrc==='aberto'){
+      arr.sort((a,b)=> (orcFollowInfo(a)?.dias??1e8)-(orcFollowInfo(b)?.dias??1e8));
+    } else if(state.abaOrc==='pendente'){
+      arr.sort((a,b)=> new Date(a.criado_em||0)-new Date(b.criado_em||0));
+    } else {
+      arr.sort((a,b)=> new Date(b.ganho_em||b.perdido_em||b.criado_em||0)-new Date(a.ganho_em||a.perdido_em||a.criado_em||0));
+    }
   }
   el.innerHTML = arr.map(cardOrc).join('');
   vazio.classList.toggle('hidden', arr.length>0);
   ligarCardsOrc();
+}
+
+/* A mesma busca também procura nas OBRAS (inclusive concluídas): se o serviço já
+   virou obra, não faz sentido abrir orçamento de novo. É o que evita o card repetido. */
+function renderObrasAchadas(q){
+  const box=$('#orc-obras-achadas'); if(!box) return;
+  if(!q){ box.className='hidden'; box.innerHTML=''; return; }
+  const achadas=state.obras.filter(o=>!o.avulsa && [o.cliente,o.endereco,o.orcamento_qs]
+    .filter(Boolean).join(' ').toLowerCase().includes(q));
+  if(!achadas.length){ box.className='hidden'; box.innerHTML=''; return; }
+  achadas.sort((a,b)=> new Date(b.criado_em||0)-new Date(a.criado_em||0));
+  box.className='obras-achadas';
+  box.innerHTML=`<div class="oa-tit">⚠ Já existe obra para essa busca — confira antes de criar um orçamento novo</div>
+    <div class="oa-lista">${achadas.map(o=>`<button class="oa-card" data-id="${o.id}">
+      <span class="oa-nome">${esc(o.cliente)}</span>
+      ${o.orcamento_qs?`<span class="oa-or">${esc(o.orcamento_qs)}</span>`:''}
+      <span class="status-badge st-${o.status_execucao}">${STATUS[o.status_execucao].label}</span>
+    </button>`).join('')}</div>`;
+  box.querySelectorAll('.oa-card').forEach(b=>b.onclick=()=>abrirObra(b.dataset.id));
+}
+
+/* onde a busca procura — inclui motivo da perda, observações e telefone */
+function orcCasaBusca(o,q){
+  const campos=[o.cliente, o.origem, o.orcamento_qs, o.contato_nome, o.telefone,
+    o.responsavel, o.observacoes, o.motivo_perda, MOTIVO_PERDA[o.motivo_perda_tipo],
+    ORC_STATUS[o.status]?.label];
+  return campos.filter(Boolean).join(' ').toLowerCase().includes(q);
 }
 function cardOrc(o){
   const f=orcFollowInfo(o);
@@ -1894,7 +1947,10 @@ function emailRenov(id, focoWa){
    ===================================================================== */
 $('#btn-nova-cobranca') && $('#btn-nova-cobranca').addEventListener('click', ()=>formCobrancaAvulsa(null));
 
+let _qsCobFiles=[];   // PDFs do QS importados na cobrança, anexados após salvar
+
 function formCobrancaAvulsa(o){
+  _qsCobFiles=[];
   const ed=!!o, fin=o?state.financeiro[o.id]:null;
   const st=fin?.status_cobranca||'a_cobrar';
   const ref=(fin?.pago_em||fin?.cobranca_enviada_em||o?.concluida_em||new Date().toISOString()).slice(0,10);
@@ -1913,12 +1969,57 @@ function formCobrancaAvulsa(o){
       <label class="campo full">Data da cobrança<input type="date" name="data" value="${ref}"></label>
     </div>
     <p class="det-sub">É esta data que conta no marcador da meta semanal (quando a situação é "enviada" ou "pago").</p>
+
+    <div class="det-sec"><h3>Orçamento do Quanto Sobra <small>— puxa cliente, nº e valor; o PDF fica anexado</small></h3>
+      <button type="button" class="btn btn-sec btn-sm" id="cob-import">📎 Importar do Quanto Sobra (PDF)</button>
+      <input type="file" id="cob-import-input" accept="application/pdf" multiple class="hidden">
+      <div id="cob-import-msg" class="det-sub" style="margin-top:6px"></div>
+      <div id="cob-anexos" style="margin-top:8px"></div></div>
     <div class="form-acoes">${ed?'<button type="button" class="btn btn-ghost" id="cob-del">Excluir</button>':''}
       <button type="button" class="btn btn-ghost" id="cob-cancel">Cancelar</button>
       <button type="submit" class="btn btn-primary">${ed?'Salvar alterações':'Criar cobrança'}</button></div></form>`);
   $('#cob-cancel').onclick=fecharModal;
   $('#cob-del') && ($('#cob-del').onclick=()=>excluirCobrancaAvulsa(o));
   $('#form-cob').onsubmit=e=>{ e.preventDefault(); salvarCobrancaAvulsa(o); };
+  $('#cob-import').onclick=()=>$('#cob-import-input').click();
+  $('#cob-import-input').onchange=async e=>{
+    const files=[...e.target.files]; if(!files.length) return;
+    const msg=$('#cob-import-msg'); msg.textContent=`Lendo ${files.length} PDF(s)…`;
+    try{
+      const qs=await importarQSmulti(files);
+      const ff=$('#form-cob');
+      if(qs.cliente) ff.cliente.value=qs.cliente;
+      if(qs.orcamento_qs) ff.orcamento_qs.value=qs.orcamento_qs;
+      if(qs.total!=null) ff.valor.value=qs.total.toFixed(2);
+      // sugere a referência pelos serviços detectados (sem apagar o que já foi escrito)
+      if(!ff.referencia.value.trim() && qs.servicos.length)
+        ff.referencia.value=qs.servicos.map(s=>SERVICOS[s]?.label||s).join(' + ');
+      _qsCobFiles=files;
+      const partes=[];
+      if(qs.cliente) partes.push('Cliente: <b>'+esc(qs.cliente)+'</b>');
+      if(qs.orcamento_qs) partes.push(esc(qs.orcamento_qs));
+      if(qs.total!=null) partes.push('Valor '+moeda(qs.total));
+      msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+
+        `. ${files.length>1?'Os PDFs ficam anexados':'O PDF fica anexado'} ao salvar.`;
+    }catch(err){ msg.textContent='Não consegui ler o PDF: '+err.message; }
+  };
+  if(ed) carregarAnexosCob(o.id);
+}
+
+/* anexos da cobrança (o PDF do orçamento fica junto para conferir na hora de cobrar) */
+async function carregarAnexosCob(obraId){
+  const el=$('#cob-anexos'); if(!el) return;
+  const { data, error }=await sb.from('obra_anexos').select('*').eq('obra_id',obraId).order('criado_em');
+  if(error || !data || !data.length){ el.innerHTML=''; return; }
+  el.innerHTML=data.map(a=>`<div class="anexo-item"><a href="#" class="js-cob-anexo" data-p="${esc(a.path)}">📄 ${esc(a.nome)}</a>
+    <button class="x-row js-cob-del-anexo" data-id="${a.id}" data-p="${esc(a.path)}" title="Excluir">×</button></div>`).join('');
+  el.querySelectorAll('.js-cob-anexo').forEach(x=>x.onclick=ev=>{ ev.preventDefault(); verAnexo(x.dataset.p); });
+  el.querySelectorAll('.js-cob-del-anexo').forEach(x=>x.onclick=async()=>{
+    if(!confirm('Excluir este anexo?')) return;
+    await sb.storage.from('projetos').remove([x.dataset.p]);
+    await sb.from('obra_anexos').delete().eq('id',x.dataset.id);
+    carregarAnexosCob(obraId); toast('Anexo removido.');
+  });
 }
 
 async function salvarCobrancaAvulsa(o){
@@ -1947,6 +2048,9 @@ async function salvarCobrancaAvulsa(o){
     await sb.from('obra_financeiro').upsert({ obra_id:id, valor_total:valor, status_cobranca:status,
       cobranca_enviada_em: (status==='cobranca_enviada'||status==='pago') ? quando : null,
       pago_em: status==='pago' ? quando : null });
+    // anexa os PDFs do Quanto Sobra importados (se houver)
+    for(const file of (_qsCobFiles||[])){ await uploadAnexo({id}, file); }
+    _qsCobFiles=[];
     await logar(id,'cobrança', (o?'Editou':'Criou')+' cobrança avulsa de '+moeda(valor));
     fecharModal(); await carregarTudo(true);
     toast(o?'Cobrança atualizada.':'Cobrança criada ✓');
