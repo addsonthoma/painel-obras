@@ -769,8 +769,9 @@ $('#btn-nova-obra').addEventListener('click', ()=>formObra(null));
 function formObra(o){
   _qsObraFiles=[];
   const ed=!!o; const fin = o?state.financeiro[o.id]:null;
-  const servOpts=Object.entries(SERVICOS).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
-  const servRows=(o?.obra_servicos||[]).map(s=>servRow(s,servOpts)).join('') || servRow(null,servOpts);
+  const servChips=Object.entries(SERVICOS).map(([k,v])=>
+    `<button type="button" class="serv-chip ${k}" data-s="${k}">${v.label}</button>`).join('');
+  const servRows=(o?.obra_servicos||[]).map(servRow).join('');
   const itemRows=(o?.obra_itens||[]).sort((a,b)=>(a.ordem||0)-(b.ordem||0)).map(itemRow).join('') || itemRow(null);
   const eqAtual=new Set((o?.equipe_confirmada)||[]);
   const eqChips=state.equipe.filter(e=>e.ativo).map(e=>`<button type="button" class="pessoa-chip ${eqAtual.has(e.nome)?'sel':''} ${e.coringa?'coringa':''}" data-n="${esc(e.nome)}">${esc(e.nome)}${e.parceiro?' ⚙':''}${e.coringa?' ★':''}</button>`).join('');
@@ -793,8 +794,9 @@ function formObra(o){
       <input type="file" id="obra-import-input" accept="application/pdf" multiple class="hidden">
       <div id="obra-import-msg" class="det-sub" style="margin-top:6px"></div></div>
 
-    <div class="det-sec"><h3>Serviços (dias × pessoas)</h3><div id="serv-list">${servRows}</div>
-      <button type="button" class="mini-add" id="add-serv">+ adicionar serviço</button></div>
+    <div class="det-sec"><h3>Serviços <small>— clique nos que serão executados</small></h3>
+      <div class="serv-pick" id="serv-pick">${servChips}</div>
+      <div id="serv-list">${servRows}</div></div>
 
     <div class="det-sec"><h3>Materiais (produto + quantidade — vira a folha do Moritz)</h3><div id="item-list">${itemRows}</div>
       <button type="button" class="mini-add" id="add-item">+ adicionar material</button></div>
@@ -807,7 +809,8 @@ function formObra(o){
       <button type="submit" class="btn btn-primary">${ed?'Salvar alterações':'Criar obra'}</button></div>
     </form>`);
 
-  $('#add-serv').onclick=()=>{ const d=document.createElement('div'); d.innerHTML=servRow(null,servOpts); $('#serv-list').appendChild(d.firstElementChild); ligarRemover(); };
+  marcarChipsServico();
+  $('#serv-pick').querySelectorAll('.serv-chip').forEach(c=>c.onclick=()=>alternarServico(c.dataset.s));
   $('#add-item').onclick=()=>{ const d=document.createElement('div'); d.innerHTML=itemRow(null); $('#item-list').appendChild(d.firstElementChild); ligarRemover(); };
   ligarRemover();
   $('#obra-import').onclick=()=>$('#obra-import-input').click();
@@ -821,7 +824,7 @@ function formObra(o){
       if(qs.orcamento_qs) ff.orcamento_qs.value=qs.orcamento_qs;
       if(qs.total!=null) ff.valor_total.value=qs.total.toFixed(2);
       if(qs.temSkid) ff.tem_skid.checked=true;
-      if(qs.servicos.length) $('#serv-list').innerHTML=qs.servicos.map(s=>servRow({servico:s},servOpts)).join('');
+      if(qs.servicos.length) setServicosForm(qs.servicos.map(x=>({servico:x})));
       if(qs.itens.length) $('#item-list').innerHTML=qs.itens.map(itemRow).join('');
       ligarRemover();
       _qsObraFiles=files; // anexa ao salvar
@@ -845,17 +848,36 @@ function formObra(o){
   $('#cancela').onclick=()=> o?abrirObra(o.id):fecharModal();
   $('#form-obra').onsubmit=e=>{ e.preventDefault(); salvarObra(o); };
 }
-function servRow(s,opts){ return `<div class="serv-row"><select class="f-serv">${opts.replace(`value="${s?.servico}"`,`value="${s?.servico}" selected`)}</select>
-  <input class="f-dias" type="number" min="0" placeholder="dias" value="${s?.dias??''}">
-  <input class="f-pess" type="number" min="0" placeholder="pessoas" value="${s?.pessoas??''}">
-  <button type="button" class="x-row js-rm">×</button></div>`; }
+// uma linha de dias x pessoas para cada servico marcado (a cor vem do chip)
+function servRow(s){ return `<div class="serv-row" data-s="${s.servico}">
+  <span class="chip-serv ${s.servico}">${esc(SERVICOS[s.servico]?.label||s.servico)}</span>
+  <input class="f-dias" type="number" min="0" placeholder="dias" value="${s.dias??''}">
+  <input class="f-pess" type="number" min="0" placeholder="pessoas" value="${s.pessoas??''}">
+  <button type="button" class="x-row js-rm-serv" data-s="${s.servico}" title="Tirar">×</button></div>`; }
+// marca no seletor os servicos que ja estao na lista
+function marcarChipsServico(){
+  const tem=new Set([...document.querySelectorAll('#serv-list .serv-row')].map(r=>r.dataset.s));
+  document.querySelectorAll('#serv-pick .serv-chip').forEach(c=>c.classList.toggle('sel', tem.has(c.dataset.s)));
+  document.querySelectorAll('#serv-list .js-rm-serv').forEach(b=>b.onclick=()=>alternarServico(b.dataset.s));
+}
+function alternarServico(cod){
+  const linha=document.querySelector(`#serv-list .serv-row[data-s="${cod}"]`);
+  if(linha) linha.remove();
+  else { const d=document.createElement('div'); d.innerHTML=servRow({servico:cod});
+         $('#serv-list').appendChild(d.firstElementChild); }
+  marcarChipsServico();
+}
+function setServicosForm(lista){
+  $('#serv-list').innerHTML=(lista||[]).map(servRow).join('');
+  marcarChipsServico();
+}
 function itemRow(it){ return `<div class="item-row"><input class="prod" placeholder="Material / produto" value="${esc(it?.produto||'')}">
   <input class="qtd" type="number" step="0.001" placeholder="qtd" value="${it?.quantidade??''}">
   <input class="uni" placeholder="un." value="${esc(it?.unidade||'')}">
   <button type="button" class="x-row js-rm">×</button></div>`; }
 function ligarRemover(){ document.querySelectorAll('#form-obra .js-rm').forEach(b=>b.onclick=()=>b.parentElement.remove()); }
 function lerServicos(){ const servicos=[]; let temSkid=$('#form-obra [name=tem_skid]').checked;
-  document.querySelectorAll('#serv-list .serv-row').forEach(r=>{ const s=r.querySelector('.f-serv').value; if(s) servicos.push(s); });
+  document.querySelectorAll('#serv-list .serv-row').forEach(r=>{ if(r.dataset.s) servicos.push(r.dataset.s); });
   return {servicos,temSkid}; }
 
 // Confere se algum OR ("OR930" ou "OR930 + OR931") já existe na lista (obras ou orçamentos).
@@ -890,7 +912,7 @@ async function salvarObra(o){
 }
 
 async function salvarObraDados(o, f, cliente){
-  const servicos=[...document.querySelectorAll('#serv-list .serv-row')].map(r=>({servico:r.querySelector('.f-serv').value,
+  const servicos=[...document.querySelectorAll('#serv-list .serv-row')].map(r=>({servico:r.dataset.s,
     dias:r.querySelector('.f-dias').value?+r.querySelector('.f-dias').value:null, pessoas:r.querySelector('.f-pess').value?+r.querySelector('.f-pess').value:null})).filter(s=>s.servico);
   const itens=[...document.querySelectorAll('#item-list .item-row')].map((r,i)=>({produto:r.querySelector('.prod').value.trim(),
     quantidade:+r.querySelector('.qtd').value||0, unidade:r.querySelector('.uni').value.trim()||null, ordem:i})).filter(i=>i.produto);

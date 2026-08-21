@@ -311,6 +311,22 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
   .ag-grade.mes .ag-card-eq,.ag-grade.mes .servicos-chips{display:none}
 }
 
+/* seletor de servicos no formulario de obra — mesmas cores dos cards */
+.serv-pick{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px}
+.serv-chip{border:1.5px solid var(--linha); background:#fff; color:var(--tinta-suave);
+  border-radius:20px; padding:7px 14px; font-size:.83rem; font-weight:700; cursor:pointer;
+  transition:transform .12s cubic-bezier(.34,1.56,.64,1), background .15s, color .15s, border-color .15s}
+.serv-chip:hover{border-color:#c3cbd9; color:var(--tinta); transform:translateY(-1px)}
+.serv-chip.sel::before{content:'✓ '; font-weight:900}
+.serv-chip.sel.SHP,.serv-chip.sel.MANUT_SHP,.serv-chip.sel.MANUT_SKID{background:#fbd7db; color:#9c1f27; border-color:#e79aa3}
+.serv-chip.sel.SPDA{background:#d7e3fc; color:#1a4db0; border-color:#9fbcf6}
+.serv-chip.sel.SDAI,.serv-chip.sel.MANUT_ALARME{background:#cdebdb; color:#116039; border-color:#93d2b3}
+.serv-chip.sel.VITAIS{background:#fbebb0; color:#7d5800; border-color:#e6cd74}
+.serv-chip.sel.GLP,.serv-chip.sel.AR_COMPRIMIDO{background:#e0e4ec; color:#454d5c; border-color:#bcc4d2}
+.serv-row{display:flex; align-items:center; gap:8px; margin-bottom:6px}
+.serv-row .chip-serv{flex:1; text-align:left; padding:6px 11px}
+.serv-row .f-dias,.serv-row .f-pess{width:96px; padding:7px 9px; border:1px solid var(--linha); border-radius:8px; font-size:.86rem}
+
 /* ---- metas, medidores e KPIs ---- */
 .meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
 .meta-box.compacto{padding:15px 18px}
