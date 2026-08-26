@@ -2673,7 +2673,8 @@ function abrirAgendamento(agId){
 
   let html=`<h2>${esc(o.cliente)}</h2>
     <div class="det-sub">📅 ${dataBR(a.data)} ${o.endereco?'· '+esc(o.endereco):''}</div>
-    ${servs?`<div class="servicos-chips" style="margin-top:8px">${servs}</div>`:''}`;
+    <div class="servicos-chips" style="margin-top:8px">${servs||'<span class="card-end">sem serviço definido</span>'}
+      ${state.isAdmin?`<button class="btn btn-sec btn-sm" id="ag-edit-serv" style="margin-left:6px">🎨 Trocar serviços</button>`:''}</div>`;
 
   // equipe do dia
   html+=`<div class="det-sec"><h3>Equipe do dia</h3>
@@ -2711,6 +2712,7 @@ function abrirAgendamento(agId){
   $('#ag-print') && ($('#ag-print').onclick=()=>imprimirMateriais(o.id));
   $('#ag-ver-pdf') && ($('#ag-ver-pdf').onclick=()=>verPDF(o));
   $('#ag-edit-eq') && ($('#ag-edit-eq').onclick=()=>editarEquipeDia(a,o));
+  $('#ag-edit-serv') && ($('#ag-edit-serv').onclick=()=>editarServicosObra(a,o));
   $('#ag-edit-obs') && ($('#ag-edit-obs').onclick=()=>editarObsDia(a));
   $('#ag-edit-obs-obra') && ($('#ag-edit-obs-obra').onclick=()=>editarObsObraNaAgenda(a,o));
   $('#ag-abrir-obra') && ($('#ag-abrir-obra').onclick=()=>abrirObra(o.id));
@@ -2793,6 +2795,34 @@ function editarEquipeDia(a,o){
     await carregarTudo(true); abrirAgendamento(a.id); toast('Equipe do dia salva.');
   };
 }
+/* troca o tipo de serviço da obra direto pela agenda (muda tambem a cor do card) */
+function editarServicosObra(a,o){
+  const chips=Object.entries(SERVICOS).map(([k,v])=>
+    `<button type="button" class="serv-chip ${k}" data-s="${k}">${v.label}</button>`).join('');
+  const linhas=(o.obra_servicos||[]).map(servRow).join('');
+  abrirModal(`<h2>Serviços da obra</h2>
+    <p class="det-sub">${esc(o.cliente)} — define o que será executado e a <b>cor do card</b>.</p>
+    <div class="serv-pick" id="serv-pick">${chips}</div>
+    <div id="serv-list">${linhas}</div>
+    <div class="form-acoes"><button class="btn btn-ghost" id="es-volta">Voltar</button>
+      <button class="btn btn-primary" id="es-salva">Salvar serviços</button></div>`);
+  marcarChipsServico();
+  $('#serv-pick').querySelectorAll('.serv-chip').forEach(c=>c.onclick=()=>alternarServico(c.dataset.s));
+  $('#es-volta').onclick=()=>abrirAgendamento(a.id);
+  $('#es-salva').onclick=async()=>{
+    const servicos=[...document.querySelectorAll('#serv-list .serv-row')].map(r=>({
+      obra_id:o.id, servico:r.dataset.s,
+      dias:r.querySelector('.f-dias').value?+r.querySelector('.f-dias').value:null,
+      pessoas:r.querySelector('.f-pess').value?+r.querySelector('.f-pess').value:null })).filter(x=>x.servico);
+    const { error }=await sb.from('obra_servicos').delete().eq('obra_id',o.id);
+    if(error){ toast(error.message,true); return; }
+    if(servicos.length){ const { error:e2 }=await sb.from('obra_servicos').insert(servicos);
+      if(e2){ toast(e2.message,true); return; } }
+    await logar(o.id,'serviços','Definiu: '+(servicos.map(x=>SERVICOS[x.servico]?.label||x.servico).join(', ')||'(nenhum)'));
+    await carregarTudo(true); abrirAgendamento(a.id); toast('Serviços atualizados.');
+  };
+}
+
 function editarObsDia(a){
   abrirModal(`<h2>Observações de ${dataBR(a.data)}</h2>
     <textarea id="ago-area" class="campo" style="width:100%;min-height:140px;font-family:inherit" placeholder="Ex.: levar andaime; cliente libera às 8h; portaria pede lista de nomes…">${esc(a.observacoes||'')}</textarea>
