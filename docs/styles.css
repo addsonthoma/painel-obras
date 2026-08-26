@@ -283,6 +283,23 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
   .ag-card.ag-ok .ag-card-nome{padding-right:46px}
 }
 
+/* conflito de equipe: mesma pessoa em 2+ obras no dia */
+.eq-dup{color:var(--perigo); font-weight:800}
+.eq-dup span{display:inline-block; background:var(--perigo); color:#fff; border-radius:50%;
+  width:13px; height:13px; line-height:13px; text-align:center; font-size:.62rem; margin-left:2px; vertical-align:middle}
+/* quem ficou sem obra no dia */
+.ag-livres{font-size:.68rem; font-weight:700; color:#7a5a00; background:var(--aviso-bg);
+  border-radius:6px; padding:2px 6px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+/* contador de obras no dia + "mais N" no mes */
+.ag-qtd{margin-left:auto; font-size:.66rem; font-weight:800; background:var(--marca); color:#fff;
+  border-radius:20px; padding:1px 7px}
+.ag-mais{font-size:.68rem; font-weight:700; color:var(--tinta-suave); text-align:center; padding:2px}
+/* cabecalho dos dias da semana (vista mes) */
+.ag-cab{font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--tinta-suave); text-align:center; padding:2px 0 4px}
+.ag-grade.mes .ag-dia-topo{justify-content:flex-start; gap:5px}
+.ag-grade.mes .ag-num{font-size:.92rem}
+
 /* checklist de materiais (ficha do dia) */
 .mat-resumo{font-size:.82rem; color:var(--tinta-suave); margin-bottom:8px}
 .mat-falta-txt{color:var(--perigo)}

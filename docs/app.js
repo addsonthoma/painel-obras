@@ -2439,6 +2439,21 @@ function tituloVista(){
   return `${MES_NOME[state.agRef.getMonth()]} de ${state.agRef.getFullYear()}`;
 }
 function agendaDoDia(iso){ return state.agenda.filter(a=>a.data===iso); }
+/* quem está alocado no dia e em quantas obras (base do "!" de conflito) */
+function alocacaoDoDia(iso){
+  const m=new Map();
+  agendaDoDia(iso).forEach(a=>{
+    const o=state.obras.find(x=>x.id===a.obra_id);
+    const eq=(a.equipe&&a.equipe.length)?a.equipe:(o?.equipe_confirmada||[]);
+    eq.forEach(n=>m.set(n,(m.get(n)||0)+1));
+  });
+  return m;
+}
+/* funcionários da casa (sem coringa nem parceiro) que ficaram sem obra no dia */
+function livresDoDia(iso, aloc){
+  const a=aloc||alocacaoDoDia(iso);
+  return state.equipe.filter(e=>e.ativo && !e.coringa && !e.parceiro && !a.has(e.nome)).map(e=>e.nome);
+}
 /* obras ativas que ainda não têm dia marcado de hoje em diante (com busca, mais urgentes primeiro) */
 function obrasAAgendar(){
   const hoje=isoDia(new Date());
@@ -2491,14 +2506,26 @@ function renderAgenda(){
   grade.className = state.agModo==='semana' ? 'ag-grade semana' : 'ag-grade mes';
 
   const hoje=isoDia(new Date());
-  grade.innerHTML = diasDaVista().map(d=>{
+  const mes = state.agModo==='mes';
+  // no mês, os dias da semana viram um cabeçalho único em cima (em vez de repetir em cada célula)
+  const cab = mes ? DIA_SEMANA.map(x=>`<div class="ag-cab">${x}</div>`).join('') : '';
+  grade.innerHTML = cab + diasDaVista().map(d=>{
     const iso=isoDia(d), doDia=agendaDoDia(iso);
-    const foraDoMes = state.agModo==='mes' && d.getMonth()!==state.agRef.getMonth();
+    const foraDoMes = mes && d.getMonth()!==state.agRef.getMonth();
     const fds = d.getDay()===0 || d.getDay()===6;
+    const aloc = alocacaoDoDia(iso);
+    const livres = doDia.length ? livresDoDia(iso, aloc) : [];
+    const limite = mes ? 3 : 99;
+    const mostra = doDia.slice(0, limite);
+    const resto = doDia.length - mostra.length;
     return `<div class="ag-dia${iso===hoje?' hoje':''}${foraDoMes?' fora':''}${fds?' fds':''}" data-dia="${iso}">
-      <div class="ag-dia-topo"><span class="ag-dow">${DIA_SEMANA[(d.getDay()+6)%7]}</span>
-        <span class="ag-num">${d.getDate()}</span></div>
-      <div class="ag-dia-cards">${doDia.map(cardAgendado).join('')}</div>
+      <div class="ag-dia-topo">${mes?'':`<span class="ag-dow">${DIA_SEMANA[(d.getDay()+6)%7]}</span>`}
+        <span class="ag-num">${d.getDate()}</span>
+        ${doDia.length?`<span class="ag-qtd">${doDia.length}</span>`:''}</div>
+      ${livres.length?`<div class="ag-livres" title="Sem obra neste dia: ${esc(livres.join(', '))}">👤 livre: ${
+        esc(livres.slice(0,2).join(', '))}${livres.length>2?` +${livres.length-2}`:''}</div>`:''}
+      <div class="ag-dia-cards">${mostra.map(a=>cardAgendado(a,aloc)).join('')}
+        ${resto>0?`<div class="ag-mais">+${resto} obra${resto>1?'s':''}</div>`:''}</div>
     </div>`;
   }).join('');
 
@@ -2518,7 +2545,7 @@ function renderAgenda(){
   ligarAgenda();
 }
 
-function cardAgendado(a){
+function cardAgendado(a, aloc){
   const o=state.obras.find(x=>x.id===a.obra_id);
   if(!o) return '';
   const servs=(o.obra_servicos||[]).map(s=>`<span class="chip-serv ${s.servico}">${esc(SERVICOS[s.servico]?.label||s.servico)}</span>`).join('');
@@ -2532,7 +2559,11 @@ function cardAgendado(a){
       <button class="ag-mini js-ag-x" title="Tirar deste dia">✕</button></div>`:''}
     <div class="ag-card-nome">${esc(o.cliente)}</div>
     ${servs?`<div class="servicos-chips">${servs}</div>`:''}
-    <div class="ag-card-eq">${eq.length?'👷 '+esc(eq.join(', ')):'<span style="opacity:.6">sem equipe</span>'}</div>
+    <div class="ag-card-eq">${eq.length
+      ? '👷 '+eq.map(n=>((aloc&&aloc.get(n))>1
+          ? `<b class="eq-dup" title="${esc(n)} está em ${aloc.get(n)} obras neste dia">${esc(n)}<span>!</span></b>`
+          : esc(n))).join(', ')
+      : '<span style="opacity:.6">sem equipe</span>'}</div>
     <div class="ag-card-tags">
       ${itens.length?`<span class="ag-tag${separados===itens.length?' ok':''}">📦 ${separados}/${itens.length}</span>`:''}
       ${faltando?`<span class="ag-tag falta">⚠ ${faltando} falta${faltando>1?'m':''}</span>`:''}
