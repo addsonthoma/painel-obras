@@ -58,7 +58,7 @@ const state = {
   agenda:[], agendaErro:null, agRef:new Date(), agModo:'semana', buscaAg:'',
   filtroMon:'todos', buscaMon:'',
   modulo:'obras', aba:'obras', filtroStatus:'ativas', filtroCob:'pendentes', busca:'',
-  abaOrc:'pendente', filtroOrc:'todos', buscaOrc:'', buscaConc:'',
+  abaOrc:'pendente', filtroOrc:'todos', buscaOrc:'', buscaConc:'', buscaCob:'',
   modalAberto:false,
 };
 
@@ -434,11 +434,16 @@ function renderConcluidas(){
   }));
 }
 $('#busca-conc') && $('#busca-conc').addEventListener('input', e=>{ state.buscaConc=e.target.value; renderConcluidas(); });
+$('#busca-cob') && $('#busca-cob').addEventListener('input', e=>{ state.buscaCob=e.target.value; renderCobrancas(); });
 
 function renderCobrancas(){
   let arr=state.obras.filter(o=>{ const f=state.financeiro[o.id]; return f && f.status_cobranca && f.status_cobranca!=='nao_aplicavel'; });
   if(state.filtroCob==='pendentes') arr=arr.filter(o=>['a_cobrar','cobranca_enviada'].includes(state.financeiro[o.id].status_cobranca));
   else if(state.filtroCob!=='todas') arr=arr.filter(o=>state.financeiro[o.id].status_cobranca===state.filtroCob);
+  // busca por cliente, endereço, nº do orçamento ou referência da cobrança avulsa
+  const qc=(state.buscaCob||'').trim().toLowerCase();
+  if(qc) arr=arr.filter(o=>[o.cliente,o.endereco,o.orcamento_qs,o.observacoes]
+    .filter(Boolean).join(' ').toLowerCase().includes(qc));
   arr.sort((a,b)=> new Date(b.concluida_em||0)-new Date(a.concluida_em||0));
   $('#lista-cobrancas').innerHTML = arr.map(o=>{
     const f=state.financeiro[o.id];
@@ -457,6 +462,9 @@ function renderCobrancas(){
       </div></div>`;
   }).join('');
   $('#cob-vazio').classList.toggle('hidden', arr.length>0);
+  if($('#cob-vazio')) $('#cob-vazio').textContent = qc
+    ? `Nenhuma cobrança encontrada para “${state.buscaCob.trim()}”.`
+    : 'Nada para cobrar no momento.';
   $('#lista-cobrancas').querySelectorAll('.card-obra').forEach(c=>{
     c.querySelector('.js-cob-enviada')?.addEventListener('click', ev=>{ev.stopPropagation(); marcarCobranca(c.dataset.id,'cobranca_enviada');});
     c.querySelector('.js-cob-pago')?.addEventListener('click', ev=>{ev.stopPropagation(); marcarCobranca(c.dataset.id,'pago');});
