@@ -2887,5 +2887,123 @@ function editarObsObraNaAgenda(a,o){
   };
 }
 
+/* =====================================================================
+   CALENDÁRIO DE VENCIMENTOS (Monitoramento) — tela cheia
+   Junta num só calendário: validade do FUNCIONAMENTO, PRAZO dos autos
+   (AF/multa) e a próxima MANUTENÇÃO (última + 5 meses).
+   ===================================================================== */
+state.calRef = new Date(); state.calModo = 'mes';
+
+function _dataBRparaISO(txt){            // "27/02/2026" -> "2026-02-27"
+  const m = String(txt||'').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+/* mapa: dia (ISO) -> lista de vencimentos daquele dia */
+function eventosMonitor(){
+  const ev = {};
+  const add = (iso, o) => { if(!iso) return; (ev[iso] = ev[iso] || []).push(o); };
+  (state.monitor||[]).forEach(c => (c.monitor_res||[]).forEach(re => {
+    const nome = re.nome_edificacao || re.re_codigo;
+    // 1) funcionamento
+    let v = re.funcionamento_validade;
+    if(!v && re.funcionamento_data) v = _iso(_addAnos(re.funcionamento_data, 1));
+    add(v, { tipo:'func', reId:re.id, re:re.re_codigo, nome, cli:c.nome, txt:'Funcionamento' });
+    // 2) prazo dos autos ainda abertos
+    (re.monitor_autos||[]).filter(a=>!a.resolvido).forEach(a=>
+      add(_dataBRparaISO(a.prazo), { tipo:'auto', reId:re.id, re:re.re_codigo, nome, cli:c.nome,
+        txt:`${a.tipo} ${a.codigo}` }));
+    // 3) próxima manutenção (só quando alguém registrou a última)
+    if(re.ultima_manutencao)
+      add(_iso(_addMeses(re.ultima_manutencao, 5)), { tipo:'manut', reId:re.id, re:re.re_codigo, nome, cli:c.nome, txt:'Manutenção' });
+  }));
+  return ev;
+}
+function _diasCal(){
+  const dias = [];
+  if(state.calModo === 'semana'){
+    const i = inicioSemana(state.calRef);
+    for(let k=0;k<7;k++) dias.push(addDias(i,k));
+  } else {
+    const r = state.calRef;
+    const ult = new Date(r.getFullYear(), r.getMonth()+1, 0);
+    let d = inicioSemana(new Date(r.getFullYear(), r.getMonth(), 1));
+    const fim = addDias(inicioSemana(ult), 6);
+    while(d <= fim){ dias.push(new Date(d)); d = addDias(d,1); }
+  }
+  return dias;
+}
+function abrirCalMon(){
+  const el = $('#cal-mon'); if(!el) return;
+  el.classList.remove('hidden');
+  state.calRef = new Date();
+  renderCalMon();
+}
+function fecharCalMon(){
+  $('#cal-mon').classList.add('hidden');
+  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+}
+function renderCalMon(){
+  const grade = $('#cal-grade'); if(!grade) return;
+  const ev = eventosMonitor();
+  const hoje = isoDia(new Date());
+  const mes = state.calModo === 'mes';
+  $('#cal-titulo').textContent = mes
+    ? `${MES_NOME[state.calRef.getMonth()]} de ${state.calRef.getFullYear()}`
+    : (()=>{ const i=inicioSemana(state.calRef); return `${ddmm(i)} a ${ddmm(addDias(i,6))}`; })();
+  grade.className = 'cal-grade ' + (mes ? 'mes' : 'semana');
+
+  const dias = _diasCal();
+  grade.innerHTML = DIA_SEMANA.map(x=>`<div class="cal-cab">${x}</div>`).join('') +
+    dias.map(d=>{
+      const iso = isoDia(d);
+      const lista = (ev[iso]||[]).slice().sort((a,b)=>a.tipo.localeCompare(b.tipo));
+      const fora = mes && d.getMonth() !== state.calRef.getMonth();
+      const passou = iso < hoje;
+      return `<div class="cal-dia${iso===hoje?' hoje':''}${fora?' fora':''}${lista.length?' tem':''}" data-dia="${iso}">
+        <div class="cal-num">${d.getDate()}${lista.length?`<span class="cal-qtd">${lista.length}</span>`:''}</div>
+        ${lista.map(x=>`<div class="cal-item ${x.tipo}${passou?' venceu':''}" data-re="${x.reId}"
+            title="${esc(x.cli)} — ${esc(x.nome)} (${esc(x.re)}) · ${esc(x.txt)}">
+          <b>${esc(x.txt)}</b> ${esc(x.nome)}</div>`).join('')}
+      </div>`;
+    }).join('');
+
+  // resumo do período visível
+  const noPeriodo = dias.filter(d=>!(mes && d.getMonth()!==state.calRef.getMonth()))
+    .flatMap(d=>(ev[isoDia(d)]||[]).map(x=>({...x, dia:isoDia(d)})));
+  const cont = t => noPeriodo.filter(x=>x.tipo===t).length;
+  const vencidos = noPeriodo.filter(x=>x.dia < hoje).length;
+  $('#cal-resumo').innerHTML = `<div class="cal-resumo-box">
+    <span><b>${noPeriodo.length}</b> vencimento(s) ${mes?'no mês':'na semana'}</span>
+    <span class="cal-tag func">${cont('func')} funcionamento</span>
+    <span class="cal-tag auto">${cont('auto')} prazo de auto</span>
+    <span class="cal-tag manut">${cont('manut')} manutenção</span>
+    ${vencidos?`<span class="cal-tag venceu">${vencidos} já venceu(ram)</span>`:''}
+  </div>`;
+
+  grade.querySelectorAll('.cal-item').forEach(b=>b.onclick=()=>{ fecharCalMon(); abrirRE(b.dataset.re); });
+}
+$('#btn-cal-mon') && $('#btn-cal-mon').addEventListener('click', abrirCalMon);
+$('#cal-fechar')  && $('#cal-fechar').addEventListener('click', fecharCalMon);
+$('#cal-prev') && $('#cal-prev').addEventListener('click', ()=>{
+  state.calRef = state.calModo==='semana' ? addDias(state.calRef,-7)
+    : new Date(state.calRef.getFullYear(), state.calRef.getMonth()-1, 1); renderCalMon(); });
+$('#cal-next') && $('#cal-next').addEventListener('click', ()=>{
+  state.calRef = state.calModo==='semana' ? addDias(state.calRef,7)
+    : new Date(state.calRef.getFullYear(), state.calRef.getMonth()+1, 1); renderCalMon(); });
+$('#cal-hoje') && $('#cal-hoje').addEventListener('click', ()=>{ state.calRef=new Date(); renderCalMon(); });
+$('#cal-modo') && $('#cal-modo').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  state.calModo=b.dataset.m;
+  $('#cal-modo').querySelectorAll('button').forEach(x=>x.classList.toggle('ativa', x===b));
+  renderCalMon(); });
+$('#cal-tela') && $('#cal-tela').addEventListener('click', ()=>{
+  const el=$('#cal-mon');
+  if(!document.fullscreenElement) el.requestFullscreen?.().catch(()=>{});
+  else document.exitFullscreen?.();
+});
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape' && !$('#cal-mon').classList.contains('hidden')) fecharCalMon();
+});
+
 /* ---------- start ---------- */
 iniciar();

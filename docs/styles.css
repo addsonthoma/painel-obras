@@ -344,6 +344,50 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .serv-row .chip-serv{flex:1; text-align:left; padding:6px 11px}
 .serv-row .f-dias,.serv-row .f-pess{width:96px; padding:7px 9px; border:1px solid var(--linha); border-radius:8px; font-size:.86rem}
 
+/* ===== calendário de vencimentos (tela cheia) ===== */
+.cal-full{position:fixed; inset:0; z-index:60; background:var(--fundo); display:flex; flex-direction:column; padding:14px 18px}
+.cal-topo{display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:2px solid var(--marca)}
+.cal-marca{font-size:1.1rem}
+.cal-nav{display:flex; align-items:center; gap:6px}
+.cal-nav strong{margin-left:6px; font-size:1rem; text-transform:capitalize}
+.cal-modo{display:inline-flex; gap:2px; background:#eef1f6; border-radius:11px; padding:3px}
+.cal-modo button{border:0; background:transparent; padding:6px 13px; border-radius:8px; cursor:pointer;
+  font-weight:600; font-size:.85rem; color:var(--tinta-suave)}
+.cal-modo button.ativa{background:#fff; color:var(--marca); box-shadow:0 1px 4px rgba(20,24,40,.15)}
+.cal-legenda{display:flex; gap:6px; flex-wrap:wrap}
+.cal-acoes{margin-left:auto; display:flex; gap:6px}
+.cal-tag{font-size:.72rem; font-weight:700; padding:3px 9px; border-radius:20px}
+.cal-tag.func{background:#fbd7db; color:#9c1f27}
+.cal-tag.auto{background:#ece8fb; color:#5b3bbd}
+.cal-tag.manut{background:#d7e3fc; color:#1a4db0}
+.cal-tag.venceu{background:var(--tinta); color:#fff}
+.cal-resumo-box{display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 2px; font-size:.88rem}
+
+.cal-grade{flex:1; display:grid; grid-template-columns:repeat(7,1fr); gap:6px; overflow:auto; padding-top:6px; align-content:start}
+.cal-cab{font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--tinta-suave); text-align:center; padding:2px 0}
+.cal-dia{background:var(--card); border:1px solid var(--linha); border-radius:10px; padding:6px;
+  min-height:96px; display:flex; flex-direction:column; gap:3px}
+.cal-grade.semana .cal-dia{min-height:min(58vh,420px)}
+.cal-dia.fora{opacity:.4}
+.cal-dia.hoje{border-color:var(--marca); box-shadow:0 0 0 2px rgba(232,74,86,.16)}
+.cal-dia.tem{background:#fffdf8}
+.cal-num{display:flex; align-items:center; justify-content:space-between; font-weight:700; font-size:.9rem}
+.cal-qtd{font-size:.64rem; font-weight:800; background:var(--marca); color:#fff; border-radius:20px; padding:1px 6px}
+.cal-item{font-size:.7rem; line-height:1.25; padding:3px 6px; border-radius:6px; cursor:pointer;
+  border-left:3px solid; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transition:transform .1s}
+.cal-item:hover{transform:translateX(2px)}
+.cal-item b{font-weight:800}
+.cal-item.func{background:#fbd7db; color:#7d1a20; border-left-color:#d23b3b}
+.cal-item.auto{background:#ece8fb; color:#4a2ea8; border-left-color:#7a3bd0}
+.cal-item.manut{background:#d7e3fc; color:#173f90; border-left-color:#2f6df0}
+.cal-item.venceu{opacity:.55; text-decoration:line-through}
+@media (max-width:760px){
+  .cal-full{padding:10px}
+  .cal-grade{gap:3px} .cal-dia{min-height:66px; padding:4px}
+  .cal-item{font-size:.62rem} .cal-legenda{display:none}
+}
+
 /* ---- metas, medidores e KPIs ---- */
 .meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
 .meta-box.compacto{padding:15px 18px}

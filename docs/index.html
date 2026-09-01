@@ -213,7 +213,10 @@
       <div class="conteudo">
         <div class="barra-acoes">
           <h2 class="view-titulo">Monitoramento de edificações <small>(e-SCI / Bombeiros)</small></h2>
-          <div class="barra-dir"><button class="btn btn-primary so-admin" id="btn-novo-cliente-mon">+ Novo cliente</button></div>
+          <div class="barra-dir">
+            <button class="btn btn-sec" id="btn-cal-mon">📅 Calendário de vencimentos</button>
+            <button class="btn btn-primary so-admin" id="btn-novo-cliente-mon">+ Novo cliente</button>
+          </div>
         </div>
         <div id="mon-stats"></div>
         <div class="barra-acoes">
@@ -286,6 +289,34 @@
       </div>
     </div><!-- /mod-renovacoes -->
   </div><!-- /app -->
+
+  <!-- ============ CALENDÁRIO DE VENCIMENTOS (tela cheia) ============ -->
+  <div id="cal-mon" class="cal-full hidden">
+    <div class="cal-topo">
+      <strong class="cal-marca">📅 Vencimentos <small>— e-SCI / Bombeiros</small></strong>
+      <div class="cal-nav">
+        <button class="btn btn-ghost btn-sm" id="cal-prev">‹</button>
+        <button class="btn btn-ghost btn-sm" id="cal-hoje">Hoje</button>
+        <button class="btn btn-ghost btn-sm" id="cal-next">›</button>
+        <strong id="cal-titulo"></strong>
+      </div>
+      <div class="cal-modo" id="cal-modo">
+        <button data-m="mes" class="ativa">Mês</button>
+        <button data-m="semana">Semana</button>
+      </div>
+      <div class="cal-legenda">
+        <span class="cal-tag func">Funcionamento</span>
+        <span class="cal-tag auto">Prazo de auto</span>
+        <span class="cal-tag manut">Manutenção</span>
+      </div>
+      <div class="cal-acoes">
+        <button class="btn btn-ghost btn-sm" id="cal-tela">⛶ Tela cheia</button>
+        <button class="btn btn-ghost btn-sm" id="cal-fechar">✕ Fechar</button>
+      </div>
+    </div>
+    <div id="cal-resumo"></div>
+    <div id="cal-grade"></div>
+  </div>
 
   <!-- ================= MODAL GENÉRICO ================= -->
   <div id="modal-fundo" class="modal-fundo hidden">
