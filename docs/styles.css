@@ -226,7 +226,14 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .ag-modo button.ativa{background:#fff; color:var(--marca); box-shadow:0 1px 4px rgba(20,24,40,.15)}
 .ag-legenda{display:flex; gap:5px; flex-wrap:wrap; margin:-4px 0 12px}
 .ag-wrap{display:grid; grid-template-columns:250px 1fr; gap:16px; align-items:start}
-.ag-pool{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:14px; position:sticky; top:130px}
+.ag-pool{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:14px;
+  position:sticky; top:120px; max-height:calc(100vh - 150px); display:flex; flex-direction:column}
+/* a lista rola DENTRO da coluna: assim da pra achar a obra sem rolar a pagina
+   e perder o calendario de vista (senao nao da pra arrastar) */
+#ag-lista-pool{overflow-y:auto; overflow-x:hidden; flex:1; min-height:0; padding-right:4px}
+#ag-lista-pool::-webkit-scrollbar{width:8px}
+#ag-lista-pool::-webkit-scrollbar-thumb{background:#d7dce6; border-radius:4px}
+#ag-lista-pool::-webkit-scrollbar-thumb:hover{background:#c2c9d6}
 .ag-pool h3{margin:0 0 4px; font-size:.95rem; display:flex; align-items:center; gap:6px}
 .ag-pool h3 .badge-num{background:var(--marca); color:#fff}
 .ag-dica{font-size:.75rem; color:var(--tinta-suave); margin:0 0 10px}
@@ -320,7 +327,8 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 
 @media (max-width:900px){
   .ag-wrap{grid-template-columns:1fr}
-  .ag-pool{position:static}
+  .ag-pool{position:static; max-height:none; display:block}
+  #ag-lista-pool{overflow:visible; max-height:none}
   .ag-grade.semana{grid-template-columns:1fr; }
   .ag-grade.semana .ag-dia{min-height:auto}
   .ag-grade.mes{gap:4px}
@@ -355,6 +363,7 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
   font-weight:600; font-size:.85rem; color:var(--tinta-suave)}
 .cal-modo button.ativa{background:#fff; color:var(--marca); box-shadow:0 1px 4px rgba(20,24,40,.15)}
 .cal-legenda{display:flex; gap:6px; flex-wrap:wrap}
+.cal-dica{font-size:.72rem; color:var(--tinta-suave); align-self:center}
 .cal-acoes{margin-left:auto; display:flex; gap:6px}
 .cal-tag{font-size:.72rem; font-weight:700; padding:3px 9px; border-radius:20px}
 .cal-tag.func{background:#fbd7db; color:#9c1f27}
@@ -491,7 +500,16 @@ button.kpi-tile:hover{transform:translateY(-2px); box-shadow:var(--sombra)}
 /* ---- modal ---- */
 .modal-fundo{position:fixed; inset:0; background:rgba(15,18,28,.5); display:flex; align-items:flex-start;
   justify-content:center; padding:30px 16px; z-index:50; overflow:auto}
-.modal{background:#fff; border-radius:16px; width:min(720px,100%); box-shadow:var(--sombra); position:relative; padding:24px}
+/* modal nunca passa da tela: o conteudo rola DENTRO e os botoes ficam fixos
+   no rodape (antes, num formulario longo o "Criar obra" caia fora do alcance) */
+.modal{background:#fff; border-radius:16px; width:min(720px,100%); box-shadow:var(--sombra); position:relative;
+  padding:24px; max-height:calc(100vh - 56px); display:flex; flex-direction:column}
+#modal-conteudo{overflow-y:auto; overflow-x:hidden; flex:1; min-height:0; margin:-4px -6px 0 -4px; padding:4px 6px 0 4px}
+#modal-conteudo::-webkit-scrollbar{width:9px}
+#modal-conteudo::-webkit-scrollbar-thumb{background:#d7dce6; border-radius:5px}
+#modal-conteudo > .form-acoes:last-child,
+#modal-conteudo form > .form-acoes:last-child{position:sticky; bottom:0; background:#fff;
+  padding:12px 0 2px; margin-top:10px; border-top:1px solid var(--linha); z-index:2}
 .modal-x{position:absolute; top:12px; right:14px; border:0; background:transparent; font-size:1.7rem;
   line-height:1; color:var(--tinta-suave); cursor:pointer}
 .modal h2{margin:0 4px 4px 0; font-size:1.3rem; padding-right:30px}

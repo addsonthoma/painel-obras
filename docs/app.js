@@ -2452,7 +2452,7 @@ function alocacaoDoDia(iso){
   const m=new Map();
   agendaDoDia(iso).forEach(a=>{
     const o=state.obras.find(x=>x.id===a.obra_id);
-    const eq=(a.equipe&&a.equipe.length)?a.equipe:(o?.equipe_confirmada||[]);
+    const eq=a.equipe||[];   // equipe DO DIA manda: vazio = sem equipe mesmo
     eq.forEach(n=>m.set(n,(m.get(n)||0)+1));
   });
   return m;
@@ -2560,7 +2560,7 @@ function cardAgendado(a, aloc){
   const itens=o.obra_itens||[];
   const faltando=itens.filter(i=>i.faltando).length;
   const separados=itens.filter(i=>i.separado).length;
-  const eq=(a.equipe&&a.equipe.length)?a.equipe:(o.equipe_confirmada||[]);
+  const eq=a.equipe||[];   // equipe DO DIA manda: vazio = sem equipe mesmo
   return `<div class="ag-card ag-ok ${classeServico(o)}" draggable="${state.isAdmin}" data-ag="${a.id}">
     ${state.isAdmin?`<div class="ag-card-acoes">
       <button class="ag-mini js-ag-rep" title="Repetir em mais dias">⧉</button>
@@ -2613,9 +2613,9 @@ function ligarAgenda(){
 /* ---------- ações ---------- */
 async function agendarObra(obraId, dia, extras=0, pularFds=true){
   const o=state.obras.find(x=>x.id===obraId); if(!o) return;
-  // equipe do dia: a confirmada da obra; se não houver, a sugestão do motor
-  let equipe=(o.equipe_confirmada&&o.equipe_confirmada.length)?o.equipe_confirmada:[];
-  if(!equipe.length){ equipe=sugerirEquipe((o.obra_servicos||[]).map(s=>s.servico), o.tem_skid).equipe; }
+  // equipe do dia = a confirmada da obra (se houver). NÃO inventa gente:
+  // dá para agendar sem ninguém e definir depois (a sugestão fica no botão ✨).
+  const equipe=(o.equipe_confirmada&&o.equipe_confirmada.length)?o.equipe_confirmada:[];
   const dias=[dia, ...proximosDias(dia, extras, pularFds)];
   const linhas=dias.map(d=>({ obra_id:obraId, data:d, equipe }));
   // ignoreDuplicates: se já existir naquele dia, não quebra nem duplica
@@ -2707,7 +2707,7 @@ function abrirAgendamento(agId){
   const a=state.agenda.find(x=>x.id===agId); if(!a) return;
   const o=state.obras.find(x=>x.id===a.obra_id); if(!o) return;
   const itens=(o.obra_itens||[]).slice().sort((x,y)=>(x.ordem||0)-(y.ordem||0));
-  const eq=(a.equipe&&a.equipe.length)?a.equipe:(o.equipe_confirmada||[]);
+  const eq=a.equipe||[];   // equipe DO DIA manda: vazio = sem equipe mesmo
   const servs=(o.obra_servicos||[]).map(s=>`<span class="chip-serv ${s.servico}">${esc(SERVICOS[s.servico]?.label||s.servico)}</span>`).join('');
 
   let html=`<h2>${esc(o.cliente)}</h2>
@@ -2813,7 +2813,7 @@ async function carregarAnexosAg(obraId){
 }
 
 function editarEquipeDia(a,o){
-  const atual=new Set((a.equipe&&a.equipe.length)?a.equipe:(o.equipe_confirmada||[]));
+  const atual=new Set(a.equipe||[]);
   const chips=state.equipe.filter(e=>e.ativo).map(e=>`<button type="button" class="pessoa-chip ${atual.has(e.nome)?'sel':''} ${e.coringa?'coringa':''}" data-n="${esc(e.nome)}">${esc(e.nome)}${e.parceiro?' ⚙':''}${e.coringa?' ★':''}</button>`).join('');
   const sug=sugerirEquipe((o.obra_servicos||[]).map(s=>s.servico), o.tem_skid);
   abrirModal(`<h2>Equipe de ${dataBR(a.data)}</h2><p class="det-sub">${esc(o.cliente)} — clique para incluir/remover.</p>
@@ -2821,10 +2821,12 @@ function editarEquipeDia(a,o){
     ${sug.equipe.length?`<div class="nota">Sugestão do sistema: ${esc(sug.equipe.join(', '))}</div>`:''}
     ${sug.notas.map(n=>`<div class="nota ${n.tipo==='skid'?'skid':''}">${esc(n.texto)}</div>`).join('')}
     <div class="form-acoes"><button class="btn btn-ghost" id="agq-volta">Voltar</button>
+      <button class="btn btn-ghost" id="agq-limpar">Deixar sem equipe</button>
       <button class="btn btn-sec" id="agq-sug">✨ Usar sugestão</button>
       <button class="btn btn-primary" id="agq-salva">Salvar</button></div>`);
   $('#agq').querySelectorAll('.pessoa-chip').forEach(c=>c.onclick=()=>c.classList.toggle('sel'));
   $('#agq-volta').onclick=()=>abrirAgendamento(a.id);
+  $('#agq-limpar').onclick=()=>$('#agq').querySelectorAll('.pessoa-chip').forEach(c=>c.classList.remove('sel'));
   $('#agq-sug').onclick=()=>{ const s=new Set(sug.equipe); $('#agq').querySelectorAll('.pessoa-chip').forEach(c=>c.classList.toggle('sel', s.has(c.dataset.n))); };
   $('#agq-salva').onclick=async()=>{
     const sel=[...$('#agq').querySelectorAll('.sel')].map(c=>c.dataset.n);
@@ -3002,7 +3004,13 @@ $('#cal-tela') && $('#cal-tela').addEventListener('click', ()=>{
   else document.exitFullscreen?.();
 });
 document.addEventListener('keydown', e=>{
-  if(e.key==='Escape' && !$('#cal-mon').classList.contains('hidden')) fecharCalMon();
+  const aberto = $('#cal-mon') && !$('#cal-mon').classList.contains('hidden');
+  if(!aberto) return;
+  if(e.key==='Escape'){ fecharCalMon(); return; }
+  // setas do teclado navegam mês/semana (além dos botões ‹ ›)
+  if(e.key==='ArrowLeft'){ e.preventDefault(); $('#cal-prev').click(); }
+  if(e.key==='ArrowRight'){ e.preventDefault(); $('#cal-next').click(); }
+  if(e.key.toLowerCase()==='t'){ $('#cal-hoje').click(); }
 });
 
 /* ---------- start ---------- */
