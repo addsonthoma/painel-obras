@@ -1,17 +1,17 @@
 @echo off
-REM Coletor do monitoramento e-SCI — rodar a cada 2 dias pelo Agendador do Windows.
-REM 1) Renova a sessao do e-SCI sozinho (Playwright + perfil salvo em privado\esci_profile).
-REM 2) Coleta autos/funcionamento e grava no Supabase (le o esci_cookie.txt renovado).
+REM ===================================================================
+REM Coletor do monitoramento e-SCI.
+REM
+REM NAO chama mais o esci_login.py aqui. Motivo (incidente 26/08-01/09/2026):
+REM o login abre um navegador (Playwright) com o perfil privado\esci_profile,
+REM e a tarefa RodriguesESCILogin usa O MESMO perfil. As duas se atrapalhavam
+REM e o processo morria em segundos (0xC000013A), sem coletar nada -- ficaram
+REM 7 dias sem coleta e o painel seguia mostrando dado velho.
+REM
+REM Agora a ordem e: 08:25 RodriguesESCILogin renova o cookie ->
+REM 08:35 este .bat so LE o cookie e coleta (rapido, sem abrir navegador).
+REM ===================================================================
 cd /d C:\Users\User\PainelObras
-
-REM rotaciona o log se passar de ~200 KB (guarda 1 geracao em .old)
-if exist privado\coletar_monitor.log for %%A in (privado\coletar_monitor.log) do if %%~zA gtr 200000 (
-  del /q privado\coletar_monitor.log.old 2>nul
-  ren privado\coletar_monitor.log coletar_monitor.log.old
-)
-
 echo ===== %DATE% %TIME% ===== >> privado\coletar_monitor.log
-python privado\esci_login.py >> privado\coletar_monitor.log 2>&1
-python scripts\coletar_monitor.py >> privado\coletar_monitor.log 2>&1
-set RC=%ERRORLEVEL%
-exit /b %RC%
+python -u scripts\coletar_monitor.py >> privado\coletar_monitor.log 2>&1
+exit /b 0

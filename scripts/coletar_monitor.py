@@ -39,17 +39,21 @@ def sb(method, path, body=None, prefer=None):
     r.add_header("apikey", SB_KEY); r.add_header("Authorization", "Bearer " + SB_KEY); r.add_header("Content-Type", "application/json")
     if prefer: r.add_header("Prefer", prefer)
     try:
-        with urllib.request.urlopen(r) as resp:
+        # timeout OBRIGATÓRIO: sem ele o script fica pendurado para sempre quando
+        # a conexão engasga (foi o que travou a coleta agendada em 09/2026)
+        with urllib.request.urlopen(r, timeout=45) as resp:
             t = resp.read().decode("utf-8"); return json.loads(t) if t else None
     except urllib.error.HTTPError as e:
         print("  [supabase %s] %s" % (e.code, e.read().decode("utf-8")[:200])); return None
+    except Exception as e:
+        print("  [rede supabase] %s" % e); return None
 
 def coluna_existe(tabela, coluna):
     r = urllib.request.Request(SB_URL + "/rest/v1/%s?select=%s&limit=1" % (tabela, coluna))
     r.add_header("apikey", SB_KEY); r.add_header("Authorization", "Bearer " + SB_KEY)
     try:
-        urllib.request.urlopen(r); return True
-    except urllib.error.HTTPError:
+        urllib.request.urlopen(r, timeout=30); return True
+    except Exception:
         return False
 
 # ---------------- e-SCI ----------------
