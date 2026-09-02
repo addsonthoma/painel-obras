@@ -397,6 +397,28 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
   .cal-item{font-size:.62rem} .cal-legenda{display:none}
 }
 
+/* materiais agrupados por serviço (formulário) */
+.grupo-sv{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:12px 0 6px; padding-top:10px; border-top:1px dashed var(--linha)}
+.grupo-sv:first-child{margin-top:2px; border-top:0; padding-top:0}
+.gs-check{display:flex; align-items:center}
+.gs-check input{width:16px; height:16px}
+.gs-n{font-size:.76rem; color:var(--tinta-suave); font-weight:600}
+.grupo-sv .js-rm-grupo{margin-left:auto}
+.grupo-sv .js-rm-grupo:hover{color:var(--perigo); border-color:var(--perigo)}
+.item-row .js-sel-item{width:16px; height:16px; flex-shrink:0}
+.barra-sel{display:flex; align-items:center; gap:10px; margin-top:8px}
+.bs-n{font-size:.8rem; color:var(--tinta-suave); font-weight:600}
+/* seletor do que imprimir */
+.imp-lista{max-height:46vh; overflow-y:auto; margin:6px 0 2px; padding-right:4px}
+.imp-grupo{margin-bottom:12px}
+.imp-cab{display:flex; align-items:center; gap:8px; padding:6px 0; cursor:pointer; border-bottom:1px solid var(--linha)}
+.imp-cab input{width:17px; height:17px}
+.imp-item{display:flex; align-items:center; gap:9px; padding:5px 4px 5px 24px; cursor:pointer; font-size:.88rem}
+.imp-item:hover{background:#f7f9fc; border-radius:6px}
+.imp-item span{flex:1}
+.imp-item b{white-space:nowrap; font-variant-numeric:tabular-nums}
+.imp-item input{width:15px; height:15px}
+
 /* ---- metas, medidores e KPIs ---- */
 .meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
 .meta-box.compacto{padding:15px 18px}

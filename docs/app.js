@@ -476,7 +476,7 @@ function renderCobrancas(){
 
 function ligarCards(sel){
   $(sel).querySelectorAll('.card-obra').forEach(c=>{
-    c.querySelector('.js-materiais')?.addEventListener('click', ev=>{ ev.stopPropagation(); imprimirMateriais(c.dataset.id); });
+    c.querySelector('.js-materiais')?.addEventListener('click', ev=>{ ev.stopPropagation(); escolherImpressao(c.dataset.id); });
     c.addEventListener('click', ()=> abrirObra(c.dataset.id));
   });
 }
@@ -568,7 +568,7 @@ function abrirObra(id){
   abrirModal(html);
 
   // handlers
-  $('#js-print-mat').onclick=()=>imprimirMateriais(o.id);
+  $('#js-print-mat').onclick=()=>escolherImpressao(o.id);
   $('#js-ver-pdf') && ($('#js-ver-pdf').onclick=()=>verPDF(o));
   $('#js-edit-obs') && ($('#js-edit-obs').onclick=()=>editarObs(o));
   $('#js-up-anexo') && ($('#js-up-anexo').onclick=()=>$('#js-anexo-input').click());
@@ -733,9 +733,49 @@ async function excluirAnexo(obraId, id, path){
 /* =====================================================================
    FOLHA DE MATERIAIS (impressão — só quantidades, SEM valores)
    ===================================================================== */
-function imprimirMateriais(id){
+/* Escolher o que vai na folha do estoque (antes saía sempre tudo).
+   Marca por serviço ou item a item; imprime só o que estiver marcado. */
+function escolherImpressao(id){
   const o=state.obras.find(x=>x.id===id); if(!o) return;
   const itens=(o.obra_itens||[]).slice().sort((a,b)=>(a.ordem||0)-(b.ordem||0));
+  if(!itens.length){ imprimirMateriais(id); return; }
+  const grupos=new Map();
+  itens.forEach(it=>{ const sv=it.servico||''; if(!grupos.has(sv)) grupos.set(sv,[]); grupos.get(sv).push(it); });
+  const blocos=[...grupos.entries()].map(([sv,lst])=>{
+    const nome = sv ? (SERVICOS[sv]?.label||sv) : 'Sem serviço';
+    return `<div class="imp-grupo">
+      <label class="imp-cab"><input type="checkbox" class="js-g" data-sv="${esc(sv)}" checked>
+        <span class="chip-serv ${esc(sv)}">${esc(nome)}</span>
+        <span class="gs-n">${lst.length} ${lst.length===1?'material':'materiais'}</span></label>
+      ${lst.map(it=>`<label class="imp-item"><input type="checkbox" class="js-i" data-id="${it.id}" data-sv="${esc(sv)}" checked>
+        <span>${esc(it.produto)}</span>
+        <b>${Number(it.quantidade).toLocaleString('pt-BR')}${it.unidade?' '+esc(it.unidade):''}</b></label>`).join('')}
+    </div>`;
+  }).join('');
+  abrirModal(`<h2>Folha de separação</h2>
+    <p class="det-sub">${esc(o.cliente)} — marque o que deve sair na folha do estoque.</p>
+    <div class="imp-lista">${blocos}</div>
+    <div class="form-acoes"><button class="btn btn-ghost" id="imp-cancel">Cancelar</button>
+      <button class="btn btn-sec" id="imp-nenhum">Desmarcar tudo</button>
+      <button class="btn btn-primary" id="imp-ok">🖨 Imprimir <span id="imp-n"></span></button></div>`);
+  const cont=()=>{ const n=document.querySelectorAll('.js-i:checked').length;
+    $('#imp-n').textContent = n?`(${n})`:''; };
+  document.querySelectorAll('.js-g').forEach(g=>g.onchange=()=>{
+    document.querySelectorAll(`.js-i[data-sv="${g.dataset.sv}"]`).forEach(i=>i.checked=g.checked); cont(); });
+  document.querySelectorAll('.js-i').forEach(i=>i.onchange=cont);
+  $('#imp-nenhum').onclick=()=>{ document.querySelectorAll('.js-i,.js-g').forEach(c=>c.checked=false); cont(); };
+  $('#imp-cancel').onclick=()=>abrirObra(id);
+  $('#imp-ok').onclick=()=>{
+    const ids=new Set([...document.querySelectorAll('.js-i:checked')].map(c=>c.dataset.id));
+    if(!ids.size){ toast('Marque ao menos um material.',true); return; }
+    fecharModal(); imprimirMateriais(id, itens.filter(it=>ids.has(String(it.id))));
+  };
+  cont();
+}
+
+function imprimirMateriais(id, apenas){
+  const o=state.obras.find(x=>x.id===id); if(!o) return;
+  const itens=apenas || (o.obra_itens||[]).slice().sort((a,b)=>(a.ordem||0)-(b.ordem||0));
   const logo=new URL('assets/logo.png', location.href).href;
   const linhas = itens.length ? itens.map((it,i)=>`<tr><td class="c">${i+1}</td><td>${esc(it.produto)}</td>
       <td class="c"><b>${Number(it.quantidade).toLocaleString('pt-BR')}</b></td><td class="c">${esc(it.unidade||'')}</td><td class="chk"></td></tr>`).join('')
@@ -819,7 +859,8 @@ function formObra(o){
 
   marcarChipsServico();
   $('#serv-pick').querySelectorAll('.serv-chip').forEach(c=>c.onclick=()=>alternarServico(c.dataset.s));
-  $('#add-item').onclick=()=>{ const d=document.createElement('div'); d.innerHTML=itemRow(null); $('#item-list').appendChild(d.firstElementChild); ligarRemover(); };
+  $('#add-item').onclick=()=>{ const d=document.createElement('div'); d.innerHTML=itemRow(null); $('#item-list').appendChild(d.firstElementChild); ligarRemover(); pintarGruposMateriais('item-list'); };
+  pintarGruposMateriais('item-list');
   ligarRemover();
   $('#obra-import').onclick=()=>$('#obra-import-input').click();
   $('#obra-import-input').onchange=async e=>{
@@ -833,7 +874,7 @@ function formObra(o){
       if(qs.total!=null) ff.valor_total.value=qs.total.toFixed(2);
       if(qs.temSkid) ff.tem_skid.checked=true;
       if(qs.servicos.length) setServicosForm(qs.servicos.map(x=>({servico:x})));
-      if(qs.itens.length) $('#item-list').innerHTML=qs.itens.map(itemRow).join('');
+      if(qs.itens.length){ $('#item-list').innerHTML=qs.itens.map(itemRow).join(''); ligarRemover(); pintarGruposMateriais('item-list'); }
       ligarRemover();
       _qsObraFiles=files; // anexa ao salvar
       const sug=sugerirEquipe(qs.servicos, qs.temSkid);  // já sugere a equipe pelos serviços
@@ -879,10 +920,64 @@ function setServicosForm(lista){
   $('#serv-list').innerHTML=(lista||[]).map(servRow).join('');
   marcarChipsServico();
 }
-function itemRow(it){ return `<div class="item-row"><input class="prod" placeholder="Material / produto" value="${esc(it?.produto||'')}">
+function itemRow(it){ return `<div class="item-row" data-sv="${esc(it?.servico||'')}">
+  <input type="checkbox" class="js-sel-item" title="Selecionar">
+  <input class="prod" placeholder="Material / produto" value="${esc(it?.produto||'')}">
   <input class="qtd" type="number" step="0.001" placeholder="qtd" value="${it?.quantidade??''}">
   <input class="uni" placeholder="un." value="${esc(it?.unidade||'')}">
   <button type="button" class="x-row js-rm">×</button></div>`; }
+
+/* Lista de materiais AGRUPADA POR SERVIÇO, com remoção em bloco.
+   Antes, importando SHP+SDAI+SPDA juntos, tirar um serviço era item por item. */
+function pintarGruposMateriais(idLista){
+  const lista=$('#'+idLista); if(!lista) return;
+  lista.querySelectorAll('.grupo-sv').forEach(g=>g.remove());
+  const linhas=[...lista.querySelectorAll('.item-row')];
+  const ordem=[]; const porSv=new Map();
+  linhas.forEach(r=>{ const sv=r.dataset.sv||''; if(!porSv.has(sv)){ porSv.set(sv,[]); ordem.push(sv); } porSv.get(sv).push(r); });
+  if(ordem.length<=1 && !ordem[0]) return;          // nada a agrupar
+  ordem.forEach(sv=>{
+    const itens=porSv.get(sv);
+    const cab=document.createElement('div');
+    cab.className='grupo-sv';
+    const nome = sv ? (SERVICOS[sv]?.label||sv) : 'Sem serviço';
+    cab.innerHTML=`<label class="gs-check"><input type="checkbox" class="js-sel-grupo"> </label>
+      <span class="chip-serv ${esc(sv)}">${esc(nome)}</span>
+      <span class="gs-n">${itens.length} ${itens.length===1?'material':'materiais'}</span>
+      <button type="button" class="btn btn-ghost btn-sm js-rm-grupo">🗑 Remover este serviço</button>`;
+    itens[0].parentNode.insertBefore(cab, itens[0]);
+    cab.querySelector('.js-rm-grupo').onclick=()=>{
+      const temServ = sv && document.querySelector(`#serv-list .serv-row[data-s="${sv}"]`);
+      if(!confirm(`Tirar "${nome}" desta ${idLista==='item-list'?'obra':'proposta'}?
+
+`
+        + `Remove os ${itens.length} materiais${temServ?' e o serviço da lista':''}.`)) return;
+      itens.forEach(r=>r.remove()); cab.remove();
+      // tira também o SERVIÇO (chip + linha dias×pessoas), que é o que o usuário quer
+      if(temServ && typeof alternarServico==='function') alternarServico(sv);
+      pintarGruposMateriais(idLista);
+    };
+    cab.querySelector('.js-sel-grupo').onchange=e=>
+      itens.forEach(r=>{ const c=r.querySelector('.js-sel-item'); if(c) c.checked=e.target.checked; });
+  });
+  // barra "remover selecionados"
+  let barra=lista.parentNode.querySelector('.barra-sel');
+  if(!barra){ barra=document.createElement('div'); barra.className='barra-sel';
+    barra.innerHTML=`<button type="button" class="btn btn-ghost btn-sm js-rm-sel">🗑 Remover selecionados</button>
+      <span class="bs-n"></span>`;
+    lista.parentNode.insertBefore(barra, lista.nextSibling);
+    barra.querySelector('.js-rm-sel').onclick=()=>{
+      const sel=[...lista.querySelectorAll('.item-row')].filter(r=>r.querySelector('.js-sel-item')?.checked);
+      if(!sel.length){ toast('Marque os materiais que quer remover.',true); return; }
+      if(!confirm(`Remover ${sel.length} material(is) selecionado(s)?`)) return;
+      sel.forEach(r=>r.remove()); pintarGruposMateriais(idLista);
+    };
+  }
+  const atualiza=()=>{ const n=[...lista.querySelectorAll('.js-sel-item')].filter(c=>c.checked).length;
+    barra.querySelector('.bs-n').textContent = n?`${n} selecionado(s)`:''; };
+  lista.querySelectorAll('.js-sel-item').forEach(c=>c.onchange=atualiza);
+  atualiza();
+}
 function ligarRemover(){ document.querySelectorAll('#form-obra .js-rm').forEach(b=>b.onclick=()=>b.parentElement.remove()); }
 function lerServicos(){ const servicos=[]; let temSkid=$('#form-obra [name=tem_skid]').checked;
   document.querySelectorAll('#serv-list .serv-row').forEach(r=>{ if(r.dataset.s) servicos.push(r.dataset.s); });
@@ -922,7 +1017,7 @@ async function salvarObra(o){
 async function salvarObraDados(o, f, cliente){
   const servicos=[...document.querySelectorAll('#serv-list .serv-row')].map(r=>({servico:r.dataset.s,
     dias:r.querySelector('.f-dias').value?+r.querySelector('.f-dias').value:null, pessoas:r.querySelector('.f-pess').value?+r.querySelector('.f-pess').value:null})).filter(s=>s.servico);
-  const itens=[...document.querySelectorAll('#item-list .item-row')].map((r,i)=>({produto:r.querySelector('.prod').value.trim(),
+  const itens=[...document.querySelectorAll('#item-list .item-row')].map((r,i)=>({servico:r.dataset.sv||null, produto:r.querySelector('.prod').value.trim(),
     quantidade:+r.querySelector('.qtd').value||0, unidade:r.querySelector('.uni').value.trim()||null, ordem:i})).filter(i=>i.produto);
   let equipe=[...$('#eq-pick').querySelectorAll('.sel')].map(c=>c.dataset.n);
   const temSkid=f.tem_skid.checked;
@@ -1754,24 +1849,35 @@ function detectarSkidQS(itens){ return itens.some(i=>(i.produto||'').toLowerCase
    quantidades de itens iguais), une os serviços detectados. Ex.: SHP+SDAI+SPDA numa obra. */
 async function importarQSmulti(files){
   let cliente=null; const ors=[]; let total=0, temTotal=false; const mapa=new Map();
+  const servicos=[];
   for(const f of files){
     const qs=extrairQS(await lerLinhasPdf(f));
     if(!cliente && qs.cliente) cliente=qs.cliente;
     if(qs.orcamento_qs && !ors.includes(qs.orcamento_qs)) ors.push(qs.orcamento_qs);
     if(qs.total!=null){ total+=qs.total; temTotal=true; }
+    // serviço DESTE arquivo — é o que permite depois remover/imprimir por serviço
+    const svArq=detectarServicosQS(qs.itens);
+    svArq.forEach(x=>{ if(!servicos.includes(x)) servicos.push(x); });
+    const sv=svArq[0]||null;
     for(const it of qs.itens){
-      const chave=(it.produto||'').toLowerCase().replace(/\s+/g,' ').trim(); if(!chave) continue;
+      const nome=(it.produto||'').toLowerCase().replace(/\s+/g,' ').trim(); if(!nome) continue;
+      // a chave inclui o serviço: material igual em serviços diferentes NÃO se
+      // mistura, senão tirar um serviço bagunçaria a quantidade do outro
+      const chave=(sv||'-')+'|'+nome;
       if(mapa.has(chave)) mapa.get(chave).quantidade+=(+it.quantidade||0);
-      else mapa.set(chave, {produto:it.produto, quantidade:+it.quantidade||0, unidade:it.unidade||null});
+      else mapa.set(chave, {produto:it.produto, quantidade:+it.quantidade||0, unidade:it.unidade||null, servico:sv});
     }
   }
   const itens=[...mapa.values()];
   return { cliente, orcamento_qs:ors.join(' + ')||null, total:temTotal?total:null, itens,
-    servicos:detectarServicosQS(itens), temSkid:detectarSkidQS(itens), nFiles:files.length };
+    servicos: servicos.length?servicos:detectarServicosQS(itens),
+    temSkid:detectarSkidQS(itens), nFiles:files.length };
 }
 
 /* ---------- formulário novo / editar orçamento ---------- */
-function orcItemRow(it){ return `<div class="item-row"><input class="oprod" placeholder="Material / produto" value="${esc(it?.produto||'')}">
+function orcItemRow(it){ return `<div class="item-row" data-sv="${esc(it?.servico||'')}">
+  <input type="checkbox" class="js-sel-item" title="Selecionar">
+  <input class="oprod" placeholder="Material / produto" value="${esc(it?.produto||'')}">
   <input class="oqtd" type="number" step="0.001" placeholder="qtd" value="${it?.quantidade??''}">
   <input class="ouni" placeholder="un." value="${esc(it?.unidade||'')}">
   <button type="button" class="x-row js-rm-o">×</button></div>`; }
@@ -1807,7 +1913,8 @@ function formOrc(o){
       <button type="submit" class="btn btn-primary">${ed?'Salvar alterações':'Criar orçamento'}</button></div>
     </form>`);
 
-  $('#orc-add-item').onclick=()=>{ const d=document.createElement('div'); d.innerHTML=orcItemRow(null); $('#orc-item-list').appendChild(d.firstElementChild); ligarRemoverOrc(); };
+  $('#orc-add-item').onclick=()=>{ const d=document.createElement('div'); d.innerHTML=orcItemRow(null); $('#orc-item-list').appendChild(d.firstElementChild); ligarRemoverOrc(); pintarGruposMateriais('orc-item-list'); };
+  pintarGruposMateriais('orc-item-list');
   ligarRemoverOrc();
   $('#orc-cancela').onclick=()=> o?abrirOrc(o.id):fecharModal();
   $('#orc-import').onclick=()=>$('#orc-import-input').click();
@@ -1820,7 +1927,7 @@ function formOrc(o){
       if(qs.cliente) ff.cliente.value=qs.cliente;
       if(qs.orcamento_qs) ff.orcamento_qs.value=qs.orcamento_qs;
       if(qs.total!=null) ff.valor_total.value=qs.total.toFixed(2);
-      if(qs.itens.length){ $('#orc-item-list').innerHTML=qs.itens.map(orcItemRow).join(''); ligarRemoverOrc(); }
+      if(qs.itens.length){ $('#orc-item-list').innerHTML=qs.itens.map(orcItemRow).join(''); ligarRemoverOrc(); pintarGruposMateriais('orc-item-list'); }
       _qsFilePend=files; // anexa após salvar
       const partes=[];
       if(qs.cliente) partes.push('Cliente: <b>'+esc(qs.cliente)+'</b>');
@@ -1839,6 +1946,7 @@ async function salvarOrc(o){
   const f=$('#form-orc');
   const cliente=f.cliente.value.trim(); if(!cliente){ toast('Informe o cliente.',true); return; }
   const itens=[...document.querySelectorAll('#orc-item-list .item-row')].map((r,i)=>({
+    servico:r.dataset.sv||null,
     produto:r.querySelector('.oprod').value.trim(),
     quantidade:+r.querySelector('.oqtd').value||0,
     unidade:r.querySelector('.ouni').value.trim()||null, ordem:i })).filter(i=>i.produto);
@@ -2748,7 +2856,7 @@ function abrirAgendamento(agId){
   abrirModal(html);
   renderMateriaisAgenda(o.id);
   carregarAnexosAg(o.id);
-  $('#ag-print') && ($('#ag-print').onclick=()=>imprimirMateriais(o.id));
+  $('#ag-print') && ($('#ag-print').onclick=()=>escolherImpressao(o.id));
   $('#ag-ver-pdf') && ($('#ag-ver-pdf').onclick=()=>verPDF(o));
   $('#ag-edit-eq') && ($('#ag-edit-eq').onclick=()=>editarEquipeDia(a,o));
   $('#ag-edit-serv') && ($('#ag-edit-serv').onclick=()=>editarServicosObra(a,o));
