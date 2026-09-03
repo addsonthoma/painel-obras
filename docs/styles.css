@@ -419,6 +419,15 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .imp-item b{white-space:nowrap; font-variant-numeric:tabular-nums}
 .imp-item input{width:15px; height:15px}
 
+/* confirmação do serviço de cada PDF importado */
+.imp-arquivos{margin-top:10px; background:#f7f9fc; border:1px solid var(--linha); border-radius:10px; padding:10px 12px}
+.ia-tit{font-size:.78rem; font-weight:700; color:var(--tinta-suave); margin-bottom:7px}
+.ia-row{display:flex; align-items:center; gap:9px; padding:4px 0; flex-wrap:wrap}
+.ia-nome{font-size:.84rem; font-weight:600; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.ia-n{font-size:.75rem; color:var(--tinta-suave)}
+.ia-sv{margin-left:auto; padding:5px 9px; border:1px solid var(--linha); border-radius:8px; font-size:.83rem; background:#fff}
+.js-sv-sel{padding:6px 10px; border:1px solid var(--linha); border-radius:8px; font-size:.83rem; background:#fff}
+
 /* ---- metas, medidores e KPIs ---- */
 .meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
 .meta-box.compacto{padding:15px 18px}

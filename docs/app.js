@@ -875,6 +875,7 @@ function formObra(o){
       if(qs.temSkid) ff.tem_skid.checked=true;
       if(qs.servicos.length) setServicosForm(qs.servicos.map(x=>({servico:x})));
       if(qs.itens.length){ $('#item-list').innerHTML=qs.itens.map(itemRow).join(''); ligarRemover(); pintarGruposMateriais('item-list'); }
+      _qsArqObra = qs.porArquivo || [];
       ligarRemover();
       _qsObraFiles=files; // anexa ao salvar
       const sug=sugerirEquipe(qs.servicos, qs.temSkid);  // já sugere a equipe pelos serviços
@@ -887,7 +888,9 @@ function formObra(o){
       partes.push('<b>'+qs.itens.length+'</b> materiais');
       const dup=orsJaExistem(qs.orcamento_qs, state.obras, o?.id);
       msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Confira os dias×pessoas. PDF(s) anexados ao salvar.'
-        +(dup.length?`<br>⚠ <b>Já existe obra com ${esc(dup.join(', '))}</b> — confira antes de salvar.`:'');
+        +(dup.length?`<br>⚠ <b>Já existe obra com ${esc(dup.join(', '))}</b> — confira antes de salvar.`:'')
+        + painelArquivosQS(_qsArqObra,'item-list');
+      ligarPainelArquivos(_qsArqObra,'item-list');
     }catch(err){ msg.textContent='Não consegui ler o PDF: '+err.message; }
   };
   $('#eq-pick').querySelectorAll('.pessoa-chip').forEach(c=>c.onclick=()=>c.classList.toggle('sel'));
@@ -920,7 +923,7 @@ function setServicosForm(lista){
   $('#serv-list').innerHTML=(lista||[]).map(servRow).join('');
   marcarChipsServico();
 }
-function itemRow(it){ return `<div class="item-row" data-sv="${esc(it?.servico||'')}">
+function itemRow(it){ return `<div class="item-row" data-sv="${esc(it?.servico||'')}" data-arq="${it?.arq??''}">
   <input type="checkbox" class="js-sel-item" title="Selecionar">
   <input class="prod" placeholder="Material / produto" value="${esc(it?.produto||'')}">
   <input class="qtd" type="number" step="0.001" placeholder="qtd" value="${it?.quantidade??''}">
@@ -935,7 +938,9 @@ function pintarGruposMateriais(idLista){
   const linhas=[...lista.querySelectorAll('.item-row')];
   const ordem=[]; const porSv=new Map();
   linhas.forEach(r=>{ const sv=r.dataset.sv||''; if(!porSv.has(sv)){ porSv.set(sv,[]); ordem.push(sv); } porSv.get(sv).push(r); });
-  if(ordem.length<=1 && !ordem[0]) return;          // nada a agrupar
+  // ANTES saía aqui quando tudo estava "sem serviço" (obras antigas, ex.: CITOL)
+  // e a barra de classificação nunca aparecia — era impossível separar por sistema.
+  if(!linhas.length) return;
   ordem.forEach(sv=>{
     const itens=porSv.get(sv);
     const cab=document.createElement('div');
@@ -963,8 +968,21 @@ function pintarGruposMateriais(idLista){
   // barra "remover selecionados"
   let barra=lista.parentNode.querySelector('.barra-sel');
   if(!barra){ barra=document.createElement('div'); barra.className='barra-sel';
+    const opts=Object.entries(SERVICOS).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join('');
     barra.innerHTML=`<button type="button" class="btn btn-ghost btn-sm js-rm-sel">🗑 Remover selecionados</button>
+      <select class="js-sv-sel"><option value="">Marcar selecionados como…</option>${opts}</select>
       <span class="bs-n"></span>`;
+    barra.querySelector('.js-sv-sel').onchange=e=>{
+      const sv=e.target.value; e.target.value='';
+      if(!sv) return;
+      const sel=[...lista.querySelectorAll('.item-row')].filter(r=>r.querySelector('.js-sel-item')?.checked);
+      if(!sel.length){ toast('Marque os materiais primeiro.',true); return; }
+      sel.forEach(r=>{ r.dataset.sv=sv; const c=r.querySelector('.js-sel-item'); if(c) c.checked=false; });
+      // garante o serviço na lista da obra
+      if(typeof alternarServico==='function' && !document.querySelector(`#serv-list .serv-row[data-s="${sv}"]`)) alternarServico(sv);
+      pintarGruposMateriais(idLista);
+      toast(`${sel.length} material(is) marcados como ${SERVICOS[sv]?.label||sv}.`);
+    };
     lista.parentNode.insertBefore(barra, lista.nextSibling);
     barra.querySelector('.js-rm-sel').onclick=()=>{
       const sel=[...lista.querySelectorAll('.item-row')].filter(r=>r.querySelector('.js-sel-item')?.checked);
@@ -1849,7 +1867,7 @@ function detectarSkidQS(itens){ return itens.some(i=>(i.produto||'').toLowerCase
    quantidades de itens iguais), une os serviços detectados. Ex.: SHP+SDAI+SPDA numa obra. */
 async function importarQSmulti(files){
   let cliente=null; const ors=[]; let total=0, temTotal=false; const mapa=new Map();
-  const servicos=[];
+  const servicos=[]; const porArquivo=[];
   for(const f of files){
     const qs=extrairQS(await lerLinhasPdf(f));
     if(!cliente && qs.cliente) cliente=qs.cliente;
@@ -1859,23 +1877,63 @@ async function importarQSmulti(files){
     const svArq=detectarServicosQS(qs.itens);
     svArq.forEach(x=>{ if(!servicos.includes(x)) servicos.push(x); });
     const sv=svArq[0]||null;
+    const grupoArq={ nome:f.name, servico:sv, itens:[] };
+    porArquivo.push(grupoArq);
+    const iArq=porArquivo.length-1;
     for(const it of qs.itens){
       const nome=(it.produto||'').toLowerCase().replace(/\s+/g,' ').trim(); if(!nome) continue;
       // a chave inclui o serviço: material igual em serviços diferentes NÃO se
       // mistura, senão tirar um serviço bagunçaria a quantidade do outro
       const chave=(sv||'-')+'|'+nome;
       if(mapa.has(chave)) mapa.get(chave).quantidade+=(+it.quantidade||0);
-      else mapa.set(chave, {produto:it.produto, quantidade:+it.quantidade||0, unidade:it.unidade||null, servico:sv});
+      else { const novo={produto:it.produto, quantidade:+it.quantidade||0, unidade:it.unidade||null, servico:sv, arq:iArq};
+             mapa.set(chave, novo); grupoArq.itens.push(novo); }
     }
   }
   const itens=[...mapa.values()];
   return { cliente, orcamento_qs:ors.join(' + ')||null, total:temTotal?total:null, itens,
     servicos: servicos.length?servicos:detectarServicosQS(itens),
-    temSkid:detectarSkidQS(itens), nFiles:files.length };
+    temSkid:detectarSkidQS(itens), nFiles:files.length, porArquivo };
+}
+
+/* Cada PDF do Quanto Sobra é um sistema (um do SHP, outro do SDAI...).
+   A detecção por palavra-chave erra — então o usuário CONFIRMA aqui, num
+   seletor por arquivo, e os materiais daquele PDF são remarcados na hora. */
+function painelArquivosQS(porArquivo, idLista){
+  if(!porArquivo || porArquivo.length<1) return '';
+  const opts=Object.entries(SERVICOS).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join('');
+  return `<div class="imp-arquivos" data-lista="${idLista}">
+    <div class="ia-tit">Confira o que é cada arquivo:</div>
+    ${porArquivo.map((a,i)=>`<div class="ia-row">
+      <span class="ia-nome" title="${esc(a.nome)}">📄 ${esc(a.nome)}</span>
+      <span class="ia-n">${a.itens.length} ${a.itens.length===1?'material':'materiais'}</span>
+      <select class="ia-sv" data-arq="${i}">
+        <option value="">— sem serviço —</option>${opts}
+      </select></div>`).join('')}
+  </div>`;
+}
+function ligarPainelArquivos(porArquivo, idLista){
+  const box=document.querySelector(`.imp-arquivos[data-lista="${idLista}"]`); if(!box) return;
+  box.querySelectorAll('.ia-sv').forEach(sel=>{
+    const i=+sel.dataset.arq;
+    sel.value = porArquivo[i].servico || '';
+    sel.onchange=()=>{
+      porArquivo[i].servico = sel.value || null;
+      // remarca as linhas daquele arquivo
+      document.querySelectorAll(`#${idLista} .item-row[data-arq="${i}"]`)
+        .forEach(r=>r.dataset.sv = sel.value || '');
+      // mantém os chips de serviço da obra em dia
+      if(sel.value && typeof marcarChipsServico==='function'){
+        const jaTem=document.querySelector(`#serv-list .serv-row[data-s="${sel.value}"]`);
+        if(!jaTem && typeof alternarServico==='function') alternarServico(sel.value);
+      }
+      pintarGruposMateriais(idLista);
+    };
+  });
 }
 
 /* ---------- formulário novo / editar orçamento ---------- */
-function orcItemRow(it){ return `<div class="item-row" data-sv="${esc(it?.servico||'')}">
+function orcItemRow(it){ return `<div class="item-row" data-sv="${esc(it?.servico||'')}" data-arq="${it?.arq??''}">
   <input type="checkbox" class="js-sel-item" title="Selecionar">
   <input class="oprod" placeholder="Material / produto" value="${esc(it?.produto||'')}">
   <input class="oqtd" type="number" step="0.001" placeholder="qtd" value="${it?.quantidade??''}">
@@ -1928,6 +1986,7 @@ function formOrc(o){
       if(qs.orcamento_qs) ff.orcamento_qs.value=qs.orcamento_qs;
       if(qs.total!=null) ff.valor_total.value=qs.total.toFixed(2);
       if(qs.itens.length){ $('#orc-item-list').innerHTML=qs.itens.map(orcItemRow).join(''); ligarRemoverOrc(); pintarGruposMateriais('orc-item-list'); }
+      _qsArqOrc = qs.porArquivo || [];
       _qsFilePend=files; // anexa após salvar
       const partes=[];
       if(qs.cliente) partes.push('Cliente: <b>'+esc(qs.cliente)+'</b>');
@@ -1936,7 +1995,9 @@ function formOrc(o){
       partes.push(qs.itens.length?('<b>'+qs.itens.length+'</b> materiais (confira!)'):'sem materiais — adicione à mão');
       const dup=orsJaExistem(qs.orcamento_qs, state.orcamentos, o?.id);
       msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Anexo(s) ao salvar.'
-        +(dup.length?`<br>⚠ <b>Já existe orçamento com ${esc(dup.join(', '))}</b> — confira antes de salvar.`:'');
+        +(dup.length?`<br>⚠ <b>Já existe orçamento com ${esc(dup.join(', '))}</b> — confira antes de salvar.`:'')
+        + painelArquivosQS(_qsArqOrc,'orc-item-list');
+      ligarPainelArquivos(_qsArqOrc,'orc-item-list');
     }catch(err){ msg.textContent='Não consegui ler o PDF: '+err.message; }
   };
   $('#form-orc').onsubmit=e=>{ e.preventDefault(); salvarOrc(o); };
@@ -2224,7 +2285,8 @@ function emailRenov(id, focoWa){
    ===================================================================== */
 $('#btn-nova-cobranca') && $('#btn-nova-cobranca').addEventListener('click', ()=>formCobrancaAvulsa(null));
 
-let _qsCobFiles=[];   // PDFs do QS importados na cobrança, anexados após salvar
+let _qsCobFiles=[];
+let _qsArqObra=[], _qsArqOrc=[];   // PDFs do QS importados na cobrança, anexados após salvar
 
 function formCobrancaAvulsa(o){
   _qsCobFiles=[];
