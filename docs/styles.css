@@ -428,6 +428,8 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .ia-sv{margin-left:auto; padding:5px 9px; border:1px solid var(--linha); border-radius:8px; font-size:.83rem; background:#fff}
 .js-sv-sel{padding:6px 10px; border:1px solid var(--linha); border-radius:8px; font-size:.83rem; background:#fff}
 
+.alerta-zero{color:var(--perigo); background:var(--perigo-bg); padding:2px 8px; border-radius:6px}
+
 /* ---- metas, medidores e KPIs ---- */
 .meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
 .meta-box.compacto{padding:15px 18px}

@@ -885,7 +885,8 @@ function formObra(o){
       if(qs.orcamento_qs) partes.push(esc(qs.orcamento_qs));
       if(qs.total!=null) partes.push('Valor '+moeda(qs.total));
       partes.push('serviços: <b>'+qs.servicos.map(s=>SERVICOS[s]?.label||s).join(', ')+'</b>');
-      partes.push('<b>'+qs.itens.length+'</b> materiais');
+      partes.push(qs.itens.length?('<b>'+qs.itens.length+'</b> materiais')
+        :'<b class="alerta-zero">⚠ NENHUM material lido do PDF — confira antes de salvar</b>');
       const dup=orsJaExistem(qs.orcamento_qs, state.obras, o?.id);
       msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Confira os dias×pessoas. PDF(s) anexados ao salvar.'
         +(dup.length?`<br>⚠ <b>Já existe obra com ${esc(dup.join(', '))}</b> — confira antes de salvar.`:'')
@@ -913,6 +914,7 @@ function marcarChipsServico(){
   document.querySelectorAll('#serv-list .js-rm-serv').forEach(b=>b.onclick=()=>alternarServico(b.dataset.s));
 }
 function alternarServico(cod){
+  if(!$('#serv-list')) return;   // formulário de orçamento não tem lista de serviços
   const linha=document.querySelector(`#serv-list .serv-row[data-s="${cod}"]`);
   if(linha) linha.remove();
   else { const d=document.createElement('div'); d.innerHTML=servRow({servico:cod});
@@ -1059,9 +1061,12 @@ async function salvarObraDados(o, f, cliente){
 
   // filhos: substitui tudo
   await sb.from('obra_servicos').delete().eq('obra_id',obraId);
-  if(servicos.length) await sb.from('obra_servicos').insert(servicos.map(s=>({...s,obra_id:obraId})));
+  if(servicos.length){ const {error:es}=await sb.from('obra_servicos').insert(servicos.map(s=>({...s,obra_id:obraId})));
+    if(es) toast('⚠ Serviços NÃO foram salvos: '+es.message, true); }
   await sb.from('obra_itens').delete().eq('obra_id',obraId);
-  if(itens.length) await sb.from('obra_itens').insert(itens.map(i=>({...i,obra_id:obraId})));
+  // confere o erro: antes, se a gravação falhasse, os materiais sumiam sem aviso
+  if(itens.length){ const {error:ei}=await sb.from('obra_itens').insert(itens.map(i=>({...i,obra_id:obraId})));
+    if(ei) toast('⚠ Os '+itens.length+' materiais NÃO foram salvos: '+ei.message, true); }
 
   // financeiro (valor) — preserva status de cobrança existente
   const finAtual=state.financeiro[obraId];
@@ -1696,7 +1701,11 @@ async function criarObraDeOrcamento(o){
   if(error){ toast('Não consegui criar a obra: '+error.message, true); return; }
   const oid=data.id;
   const itens=(o.orcamento_itens||[]);
-  if(itens.length) await sb.from('obra_itens').insert(itens.map((i,ix)=>({ obra_id:oid, produto:i.produto, quantidade:i.quantidade, unidade:i.unidade||null, ordem:ix })));
+  if(itens.length){
+    const {error:ei}=await sb.from('obra_itens').insert(itens.map((i,ix)=>({ obra_id:oid, produto:i.produto,
+      quantidade:i.quantidade, unidade:i.unidade||null, ordem:ix, servico:i.servico||null })));
+    if(ei) toast('⚠ Obra criada, mas os materiais NÃO foram copiados: '+ei.message, true);
+  } else toast('⚠ Este orçamento não tinha materiais — a obra foi criada sem lista de materiais.', true);
   await sb.from('obra_financeiro').upsert({ obra_id:oid, valor_total:o.valor_total??null, status_cobranca:'nao_aplicavel' });
   await sb.from('orcamentos').update({ obra_id:oid }).eq('id',o.id);
   await logar(oid,'criação','Veio do orçamento fechado de '+o.cliente);
@@ -1819,6 +1828,20 @@ function _ultimoValor(s){ const m=[...String(s).matchAll(/(\d{1,3}(?:\.\d{3})*,\
 //   · linhas "Totais ... 6.001,20" (total geral, sem R$).
 function extrairQS(linhas){
   const L = linhas.map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
+  // Descrição comprida QUEBRA em 2 linhas no PDF do QS:
+  //   "14 0025 Valvula gaveta haste fixa ind. 2 1/2 DN 65"  +  "ranhurada P 1 R$ 450,72 ..."
+  // Sem juntar, o item era pulado em silêncio (OR490 perdia 3 itens / 6 unidades).
+  const reIni=/^\d+\s+\d{3,6}\s+/;
+  for(let k=0;k<L.length;k++){
+    if(!reIni.test(L[k]) || /R\$/.test(L[k])) continue;
+    let j=k+1, junt=L[k], achou=false;
+    while(j<L.length && j<=k+3 && !reIni.test(L[j])){
+      junt+=' '+L[j];
+      if(/R\$/.test(L[j])){ achou=true; break; }
+      j++;
+    }
+    if(achou) L.splice(k, j-k+1, junt);
+  }
   const out = { cliente:null, orcamento_qs:null, total:null, itens:[] };
 
   // Nº do orçamento -> ORxxx
@@ -1836,7 +1859,10 @@ function extrairQS(linhas){
   if(lt) out.total=_ultimoValor(lt);
 
   // Itens: SÓ PRODUTOS (T = P). Mão de obra (S) fica de fora. Para ao chegar nos "Totais".
-  const reItem = /^(\d+)\s+(?:(\d{3,6})\s+)?(.+?)\s+([PS])\s+(\d+(?:[.,]\d+)?)\s+(?:([A-Za-zºª.]{1,6})\s+)?R\$\s*[\d.,]+\s+R\$\s*[\d.,]+$/i;
+  // 2 OU MAIS colunas em R$: sem desconto vem "Valor Un. | Total"; COM desconto o QS
+  // acrescenta "Sub-total | Desconto" (4 valores). Antes só aceitava 2 e um
+  // orçamento com desconto importava com 0 materiais (caso SIDNEI GRIPA, 17/09/2026).
+  const reItem = /^(\d+)\s+(?:(\d{3,6})\s+)?(.+?)\s+([PS])\s+(\d+(?:[.,]\d+)?)\s+(?:([A-Za-zºª.]{1,6})\s+)?(?:R\$\s*-?[\d.,]+\s*){2,}$/i;
   for(const l of L){
     if(/^totais\b/i.test(l)) break;
     const m=l.match(reItem);
@@ -1992,7 +2018,8 @@ function formOrc(o){
       if(qs.cliente) partes.push('Cliente: <b>'+esc(qs.cliente)+'</b>');
       if(qs.orcamento_qs) partes.push(esc(qs.orcamento_qs));
       if(qs.total!=null) partes.push('Valor '+moeda(qs.total));
-      partes.push(qs.itens.length?('<b>'+qs.itens.length+'</b> materiais (confira!)'):'sem materiais — adicione à mão');
+      partes.push(qs.itens.length?('<b>'+qs.itens.length+'</b> materiais (confira!)')
+        :'<b class="alerta-zero">⚠ NENHUM material lido do PDF — confira antes de salvar</b>');
       const dup=orsJaExistem(qs.orcamento_qs, state.orcamentos, o?.id);
       msg.innerHTML='✓ '+partes.join(' · ')+(files.length>1?` · juntei ${files.length} PDFs`:'')+'. Anexo(s) ao salvar.'
         +(dup.length?`<br>⚠ <b>Já existe orçamento com ${esc(dup.join(', '))}</b> — confira antes de salvar.`:'')
@@ -2036,7 +2063,8 @@ async function salvarOrc(o){
   else { const {data,error}=await sb.from('orcamentos').insert(dados).select('id').single(); if(error){toast(error.message,true);return;} orcId=data.id; }
 
   await sb.from('orcamento_itens').delete().eq('orcamento_id',orcId);
-  if(itens.length) await sb.from('orcamento_itens').insert(itens.map(i=>({...i, orcamento_id:orcId})));
+  if(itens.length){ const {error:ei}=await sb.from('orcamento_itens').insert(itens.map(i=>({...i, orcamento_id:orcId})));
+    if(ei) toast('⚠ Os '+itens.length+' materiais NÃO foram salvos: '+ei.message, true); }
 
   for(const file of (_qsFilePend||[])){ await uploadAnexoOrc({id:orcId}, file, 'quanto_sobra'); } _qsFilePend=[];
   if(!o && jaEnviado) await contatoLog(orcId,'sistema','Orçamento cadastrado já como ENVIADO.');
