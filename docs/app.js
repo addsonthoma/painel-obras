@@ -3228,7 +3228,7 @@ async function checarSessao(){
   if(!sb || !state.user) return;
   const { data, error } = await sb.rpc('sessao_ativa');
   if(error || data !== false) return;
-  alert('Sua sessão foi encerrada pelo administrador do Portal.');
+  toast('Sua sessão foi encerrada pelo administrador do Portal.', true);
   await sb.auth.signOut({ scope:'local' }).catch(()=>{});
   location.reload();
 }
@@ -3307,13 +3307,54 @@ async function renderAcessos(){
       <td title="${c.ultimo_login?new Date(c.ultimo_login).toLocaleString('pt-BR'):''}">${haQuanto(c.ultimo_login)}</td>
       <td>${c.sessoes||'—'}</td>
       <td>${bloq?'<span class="ac-st bloq">🔒 Bloqueada</span>':'<span class="ac-st ok">Ativa</span>'}</td>
-      <td class="ac-acoes">${souEu?'':`${c.sessoes?`<button class="btn btn-ghost btn-sm js-ac-conta" data-id="${c.conta_id}" data-quem="${esc(c.nome||c.email)}">Desconectar</button>`:''}<button class="btn btn-ghost btn-sm js-ac-bloq" data-id="${c.conta_id}" data-bloq="${bloq?0:1}" data-quem="${esc(c.nome||c.email)}">${bloq?'Desbloquear':'Bloquear'}</button>`}</td>
+      <td class="ac-acoes"><button class="btn btn-ghost btn-sm js-ac-senha" data-id="${c.conta_id}" data-eu="${souEu?1:0}" data-quem="${esc(c.nome||c.email)}">🔑 Trocar senha</button>${souEu?'':`${c.sessoes?`<button class="btn btn-ghost btn-sm js-ac-conta" data-id="${c.conta_id}" data-quem="${esc(c.nome||c.email)}">Desconectar</button>`:''}<button class="btn btn-ghost btn-sm js-ac-bloq" data-id="${c.conta_id}" data-bloq="${bloq?0:1}" data-quem="${esc(c.nome||c.email)}">${bloq?'Desbloquear':'Bloquear'}</button>`}</td>
     </tr>`; }).join('')}</tbody></table>`;
 
   _acUlt=Date.now(); acVivo();
   document.querySelectorAll('.js-ac-sess').forEach(b=>b.onclick=()=>acDerrubarSessao(b.dataset.id,b.dataset.quem));
   document.querySelectorAll('.js-ac-conta').forEach(b=>b.onclick=()=>acDerrubarConta(b.dataset.id,b.dataset.quem));
   document.querySelectorAll('.js-ac-bloq').forEach(b=>b.onclick=()=>acBloquear(b.dataset.id,b.dataset.bloq==='1',b.dataset.quem));
+  document.querySelectorAll('.js-ac-senha').forEach(b=>b.onclick=()=>acTrocarSenha(b.dataset.id,b.dataset.quem,b.dataset.eu==='1'));
+}
+
+/* Trocar senha: o ADMIN digita a nova senha. Propria conta -> caminho padrao
+   do Supabase (continua logado). Outra conta -> admin_definir_senha, que tambem
+   desconecta quem estava usando a senha antiga. */
+function acTrocarSenha(id, quem, souEu){
+  abrirModal(`<h2>Trocar senha</h2>
+    <p class="det-sub">${souEu?'Sua conta':esc(quem)} — mínimo de 8 caracteres.</p>
+    <form id="ac-senha-form" class="ac-senha-form">
+      <label class="campo">Nova senha
+        <input type="password" id="ac-s1" autocomplete="new-password" minlength="8" required></label>
+      <label class="campo">Repita a nova senha
+        <input type="password" id="ac-s2" autocomplete="new-password" minlength="8" required></label>
+      <label class="ac-ver"><input type="checkbox" id="ac-ver"> mostrar senha</label>
+      <div class="ac-forca" id="ac-forca"></div>
+      ${souEu?'':'<p class="det-sub">Quem estiver logado com a senha antiga é desconectado na hora. Passe a nova senha à pessoa por um canal seguro.</p>'}
+      <div class="form-acoes"><button type="button" class="btn btn-ghost" id="ac-s-cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="ac-s-ok">Salvar nova senha</button></div>
+    </form>`);
+  const s1=$('#ac-s1'), s2=$('#ac-s2'), forca=$('#ac-forca');
+  s1.focus();
+  $('#ac-ver').onchange=e=>{ s1.type=s2.type=e.target.checked?'text':'password'; };
+  s1.oninput=()=>{ const v=s1.value; let p=0;
+    if(v.length>=8)p++; if(v.length>=12)p++; if(/[A-Z]/.test(v)&&/[a-z]/.test(v))p++; if(/\d/.test(v))p++; if(/[^A-Za-z0-9]/.test(v))p++;
+    const rot=['muito fraca','fraca','razoável','boa','forte','forte'][p];
+    forca.innerHTML = v ? `<span class="ac-barra"><i style="width:${p*20}%"></i></span> ${rot}` : ''; forca.dataset.p=p; };
+  $('#ac-s-cancel').onclick=fecharModal;
+  $('#ac-senha-form').onsubmit=async e=>{
+    e.preventDefault();
+    if(s1.value.length<8){ toast('A senha precisa ter pelo menos 8 caracteres.',true); return; }
+    if(s1.value!==s2.value){ toast('As duas senhas não são iguais.',true); s2.focus(); return; }
+    const btn=$('#ac-s-ok'); btn.disabled=true; btn.textContent='Salvando…';
+    let erro=null;
+    if(souEu){ const r=await sb.auth.updateUser({ password:s1.value }); erro=r.error; }
+    else { const r=await sb.rpc('admin_definir_senha',{ p_conta:id, p_senha:s1.value }); erro=r.error; }
+    if(erro){ btn.disabled=false; btn.textContent='Salvar nova senha'; toast(erro.message,true); return; }
+    fecharModal();
+    toast(souEu?'Sua senha foi trocada.':`Senha de ${quem} trocada — a pessoa foi desconectada.`);
+    renderAcessos();
+  };
 }
 function acVivo(){
   const el=$('#ac-vivo'); if(!el||!_acUlt) return;
@@ -3326,27 +3367,44 @@ async function acRpc(nome, args){
   return data ?? true;
 }
 async function acDerrubarSessao(id, quem){
-  if(!confirm(`Desconectar este aparelho de ${quem}?\n\nA pessoa pode entrar de novo com a senha.`)) return;
+  if(!await acConfirmar({ titulo:'Desconectar aparelho', botao:'Desconectar',
+      texto:`Desconectar este aparelho de <b>${esc(quem)}</b>?<br>A pessoa pode entrar de novo com a senha.` })) return;
   if(await acRpc('admin_derrubar_sessao',{ p_sessao:id })!==null){ toast('Aparelho desconectado.'); renderAcessos(); }
 }
 async function acDerrubarConta(id, quem){
-  if(!confirm(`Desconectar ${quem} de TODOS os aparelhos?\n\nA pessoa pode entrar de novo com a senha — para impedir, use "Bloquear".`)) return;
+  if(!await acConfirmar({ titulo:'Desconectar conta', botao:'Desconectar de todos os aparelhos',
+      texto:`Desconectar <b>${esc(quem)}</b> de <b>todos</b> os aparelhos?<br>A pessoa pode entrar de novo com a senha. Para impedir, use <b>Bloquear</b> ou <b>Trocar senha</b>.` })) return;
   if(await acRpc('admin_derrubar_conta',{ p_conta:id })!==null){ toast(`${quem} desconectado(a).`); renderAcessos(); }
 }
 async function acBloquear(id, bloquear, quem){
-  const msg = bloquear
-    ? `BLOQUEAR ${quem}?\n\nA pessoa é desconectada agora e não consegue mais entrar, nem com a senha certa. Dá para desbloquear depois.`
-    : `Desbloquear ${quem}?\n\nA pessoa volta a entrar com a MESMA senha de antes.`;
-  if(!confirm(msg)) return;
+  const ok = await acConfirmar(bloquear
+    ? { titulo:'Bloquear conta', botao:'Bloquear', perigo:true,
+        texto:`Bloquear <b>${esc(quem)}</b>?<br>A pessoa é desconectada agora e não consegue mais entrar, nem com a senha certa. Dá para desbloquear depois.` }
+    : { titulo:'Desbloquear conta', botao:'Desbloquear',
+        texto:`Desbloquear <b>${esc(quem)}</b>?<br>A pessoa volta a entrar com a <b>mesma senha de antes</b>. Se quiser, troque a senha logo em seguida.` });
+  if(!ok) return;
   if(await acRpc('admin_bloquear_conta',{ p_conta:id, p_bloquear:bloquear })!==null){
     toast(bloquear?`${quem} bloqueado(a).`:`${quem} desbloqueado(a).`); renderAcessos(); }
 }
-function acConfirmaForte(texto){
-  const r=prompt(texto+'\n\nPara confirmar, digite CONFIRMAR:');
-  return (r||'').trim().toUpperCase()==='CONFIRMAR';
+/* Confirmacao dentro da propria tela (sem janelinha do navegador).
+   exigirDigitar: o botao so libera depois de digitar CONFIRMAR. */
+function acConfirmar({ titulo, texto, botao='Confirmar', perigo=false, exigirDigitar=false }){
+  return new Promise(resolve=>{
+    abrirModal(`<h2>${esc(titulo)}</h2>
+      <div class="ac-conf-texto">${texto}</div>
+      ${exigirDigitar?`<label class="campo">Para confirmar, digite <b>CONFIRMAR</b>
+        <input id="ac-conf-in" autocomplete="off" spellcheck="false"></label>`:''}
+      <div class="form-acoes"><button class="btn btn-ghost" id="ac-conf-nao">Cancelar</button>
+        <button class="btn ${perigo?'btn-perigo':'btn-primary'}" id="ac-conf-sim" ${exigirDigitar?'disabled':''}>${esc(botao)}</button></div>`);
+    const sim=$('#ac-conf-sim'), inp=$('#ac-conf-in');
+    if(inp){ inp.focus(); inp.oninput=()=>{ sim.disabled = inp.value.trim().toUpperCase()!=='CONFIRMAR'; }; }
+    $('#ac-conf-nao').onclick=()=>{ fecharModal(); resolve(false); };
+    sim.onclick=()=>{ fecharModal(); resolve(true); };
+  });
 }
 $('#ac-derrubar-outros') && ($('#ac-derrubar-outros').onclick=async()=>{
-  if(!acConfirmaForte('Desconectar TODAS as pessoas, menos você?\nElas podem entrar de novo com a senha.')) return;
+  if(!await acConfirmar({ titulo:'Desconectar todos, menos eu', botao:'Desconectar todos', perigo:true, exigirDigitar:true,
+      texto:'Todas as outras pessoas saem do Portal agora. Elas podem entrar de novo com a senha.' })) return;
   const n=await acRpc('admin_derrubar_todos',{ p_incluir_eu:false });
   if(n!==null){ toast(`${n} sessão(ões) encerrada(s).`); renderAcessos(); }
 });
@@ -3354,14 +3412,16 @@ $('#ac-bloquear-outros') && ($('#ac-bloquear-outros').onclick=async()=>{
   const { data:contas }=await sb.rpc('admin_listar_contas');
   const alvo=(contas||[]).filter(c=>c.conta_id!==state.user.id && !contaBloqueada(c));
   if(!alvo.length){ toast('Não há outras contas ativas.'); return; }
-  if(!acConfirmaForte(`BLOQUEAR ${alvo.length} conta(s)?\n\n${alvo.map(c=>'• '+(c.nome||c.email)).join('\n')}\n\nNinguém além de você vai conseguir entrar. Dá para desbloquear uma a uma depois.`)) return;
+  if(!await acConfirmar({ titulo:`Bloquear ${alvo.length} conta(s)`, botao:'Bloquear todas', perigo:true, exigirDigitar:true,
+      texto:`<ul class="ac-lista">${alvo.map(c=>'<li>'+esc(c.nome||c.email)+'</li>').join('')}</ul>Ninguém além de você vai conseguir entrar. Dá para desbloquear uma a uma depois.` })) return;
   let ok=0; for(const c of alvo){ if(await acRpc('admin_bloquear_conta',{ p_conta:c.conta_id, p_bloquear:true })!==null) ok++; }
   toast(`${ok} de ${alvo.length} conta(s) bloqueada(s).`); renderAcessos();
 });
 $('#ac-derrubar-todos') && ($('#ac-derrubar-todos').onclick=async()=>{
-  if(!acConfirmaForte('Desconectar TODO MUNDO, INCLUSIVE VOCÊ?\nVocê vai precisar entrar de novo.')) return;
+  if(!await acConfirmar({ titulo:'Desconectar todo mundo, inclusive eu', botao:'Desconectar todos', perigo:true, exigirDigitar:true,
+      texto:'Todos saem do Portal agora, você também. Você vai precisar entrar de novo.' })) return;
   const n=await acRpc('admin_derrubar_todos',{ p_incluir_eu:true });
-  if(n!==null){ alert(`${n} sessão(ões) encerrada(s). Você será desconectado agora.`);
+  if(n!==null){ toast(`${n} sessão(ões) encerrada(s). Saindo…`);
     await sb.auth.signOut({ scope:'local' }).catch(()=>{}); location.reload(); }
 });
 // atualização ao vivo enquanto a aba está aberta

@@ -468,6 +468,19 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .ac-perigo-botoes .btn:hover{border-color:var(--perigo); color:var(--perigo)}
 @media (max-width:760px){ .ac-tab{display:block; overflow-x:auto} }
 
+.ac-senha-form .campo, .campo:has(#ac-conf-in){display:flex; flex-direction:column; gap:4px; font-size:.85rem; font-weight:600; color:var(--tinta-suave)}
+.ac-senha-form input[type=password], .ac-senha-form input[type=text], #ac-conf-in{width:100%; padding:9px 10px; border:1px solid var(--linha); border-radius:8px; font:inherit; font-size:1rem}
+.ac-conf-texto{font-size:.95rem; line-height:1.5; margin:6px 0 14px}
+.ac-lista{margin:6px 0 10px; padding-left:20px}
+.btn-perigo{background:var(--perigo); color:#fff}
+.btn-perigo:hover{filter:brightness(.92)}
+.btn-perigo:disabled{opacity:.45}
+.ac-senha-form{display:flex; flex-direction:column; gap:10px}
+.ac-ver{font-size:.85rem; color:var(--tinta-suave); display:flex; align-items:center; gap:6px}
+.ac-forca{font-size:.8rem; color:var(--tinta-suave); display:flex; align-items:center; gap:8px; min-height:1em}
+.ac-barra{width:120px; height:6px; background:#e7e9ee; border-radius:3px; overflow:hidden}
+.ac-barra i{display:block; height:100%; background:var(--ok); transition:width .2s}
+
 /* ---- metas, medidores e KPIs ---- */
 .meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
 .meta-box.compacto{padding:15px 18px}

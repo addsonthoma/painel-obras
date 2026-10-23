@@ -183,6 +183,34 @@ grant execute on function public.admin_derrubar_todos(boolean)       to authenti
 grant execute on function public.admin_bloquear_conta(uuid, boolean) to authenticated;
 grant execute on function public.admin_acessos_status()              to authenticated;
 
+-- ---------------------------------------------------------------------
+-- 9) Trocar a senha de uma conta (o ADMIN digita a nova senha no Portal)
+--    Usa o mesmo formato de senha do login do Supabase (bcrypt).
+--    Quem estava logado com a senha antiga é desconectado na hora.
+--    (Para a própria conta, o Portal usa o caminho padrão do Supabase.)
+-- ---------------------------------------------------------------------
+create extension if not exists pgcrypto with schema extensions;
+
+create or replace function public.admin_definir_senha(p_conta uuid, p_senha text)
+returns void
+language plpgsql security definer set search_path = public, auth, extensions as $$
+begin
+  if not public.is_admin() then raise exception 'acesso negado'; end if;
+  if p_senha is null or length(p_senha) < 8 then
+    raise exception 'a senha precisa ter pelo menos 8 caracteres';
+  end if;
+  update auth.users
+     set encrypted_password = extensions.crypt(p_senha, extensions.gen_salt('bf', 10)),
+         updated_at = now()
+   where id = p_conta;
+  if not found then raise exception 'conta nao encontrada'; end if;
+  delete from auth.refresh_tokens where user_id = p_conta::text;
+  delete from auth.sessions where user_id = p_conta;
+end $$;
+
+revoke all on function public.admin_definir_senha(uuid, text) from public, anon;
+grant execute on function public.admin_definir_senha(uuid, text) to authenticated;
+
 -- =====================================================================
 --  FIM. Ninguém foi desconectado. Recarregue o Portal (F5): a aba
 --  "🔐 Acessos" aparece para os admins.
