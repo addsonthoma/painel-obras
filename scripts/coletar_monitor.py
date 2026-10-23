@@ -187,7 +187,9 @@ def coletar_re(s, re):
                and not f.get("flagAnulado") and _iso(f.get("dataProtocolo"))]
     validos.sort(key=lambda f: _iso(f.get("dataProtocolo")), reverse=True)
     f0 = validos[0] if validos else None
-    return {"numg": numg, "autos": autos,
+    # "leu": o e-SCI devolveu a edificacao com blocos. Sem isso a leitura e vazia
+    # (sistema fora do ar / instavel) e NAO pode contar como verificacao.
+    return {"leu": bool(blocos), "numg": numg, "autos": autos,
             "func_emissao": _iso(f0.get("dataProtocolo")) if f0 else None,
             "func_validade": _iso(f0.get("dataValidade")) if f0 else None,
             **achado}
@@ -204,6 +206,7 @@ def main():
     agora = datetime.now(timezone(timedelta(hours=-3))).isoformat(timespec="seconds")
     novos_total = 0
     falhas = []
+    vazias = []
     for re in res:
         r = coletar_re(s, re)
         if r == "EXPIRED":
@@ -223,6 +226,12 @@ def main():
             else:  # já existe -> só preenche os detalhes (sem mexer em novo/resolvido)
                 sb("PATCH", "monitor_autos?re_id=eq.%s&codigo=eq.%s" % (re["id"], quote(cod, safe="")), campos)
         novos_total += novos
+        if not r.get("leu"):
+            # incidente 22/10/2026: CBMSC instavel, o e-SCI devolveu vazio p/ as 31 RE
+            # e o coletor carimbou todas como "verificadas" -> selo verde com dado velho.
+            vazias.append(re["re_codigo"])
+            print("?? %-14s e-SCI respondeu VAZIO - nao conta como verificada" % re["re_codigo"])
+            continue
         upd = {"ultima_verificacao": agora}
         if r.get("func_emissao"):  upd["funcionamento_data"] = r["func_emissao"]
         if r.get("func_validade") and tem_validade: upd["funcionamento_validade"] = r["func_validade"]
@@ -245,6 +254,10 @@ def main():
                 re["re_codigo"], len(r["autos"]), novos, r.get("func_validade") or "-", flag))
         time.sleep(0.4)
     print("\nFIM — %d auto(s) novo(s) no total. (%s)" % (novos_total, agora))
+    if vazias:
+        print("[!] %d de %d RE vieram VAZIAS do e-SCI (sistema fora do ar/instavel?)."
+              " Nao foram marcadas como verificadas - o painel segue mostrando a idade real."
+              % (len(vazias), len(res)))
     if falhas:
         print("[!] %d RE NAO GRAVARAM: %s" % (len(falhas), ", ".join(falhas)))
         print("    Rode de novo; se insistir, confira a chave em privado/.env.")
