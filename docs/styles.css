@@ -430,6 +430,13 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 
 .alerta-zero{color:var(--perigo); background:var(--perigo-bg); padding:2px 8px; border-radius:6px}
 
+/* aviso temporario: e-SCI fora do ar */
+.aviso-esci{display:flex; gap:14px; align-items:flex-start; background:#fff4d6; border:2px solid #e0a100;
+  border-left:8px solid #d98a00; border-radius:12px; padding:14px 18px; margin:0 0 16px; color:#5c4100}
+.ae-icone{font-size:1.9rem; line-height:1}
+.ae-texto strong{display:block; font-size:1.05rem; letter-spacing:.02em; color:#7a4a00; margin-bottom:4px}
+.ae-texto span{font-size:.92rem; line-height:1.5}
+
 /* ---- metas, medidores e KPIs ---- */
 .meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
 .meta-box.compacto{padding:15px 18px}
