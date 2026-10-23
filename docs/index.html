@@ -98,6 +98,7 @@
       <button class="aba so-admin" data-aba="concluidas">✅ Concluídas <span class="badge-num" id="num-conc"></span></button>
       <button class="aba so-admin" data-aba="resultados">Resultados</button>
       <button class="aba so-admin" data-aba="equipe">Equipe</button>
+      <button class="aba so-admin" data-aba="acessos">🔐 Acessos <span class="badge-num" id="num-acessos"></span></button>
     </nav>
     <main class="conteudo">
       <!-- ABA OBRAS -->
@@ -188,6 +189,28 @@
       </section>
 
       <!-- ABA EQUIPE -->
+      <!-- ABA ACESSOS (admin): quem esta logado + desconectar/bloquear -->
+      <section id="view-acessos" class="view hidden">
+        <div class="barra-acoes">
+          <h2 class="view-titulo">Acessos ao Portal <small>— quem está logado agora</small></h2>
+          <div class="barra-dir"><span id="ac-vivo" class="ac-vivo"></span></div>
+        </div>
+        <div id="ac-status"></div>
+        <h3 class="ac-sub">Conectados agora</h3>
+        <div id="ac-sessoes"></div>
+        <h3 class="ac-sub">Contas</h3>
+        <div id="ac-contas"></div>
+        <div class="ac-perigo">
+          <h3>Ações em massa</h3>
+          <p>Use quando quiser tirar todo mundo. Cada botão pede confirmação digitada.</p>
+          <div class="ac-perigo-botoes">
+            <button class="btn btn-ghost" id="ac-derrubar-outros">Desconectar todos, menos eu</button>
+            <button class="btn btn-ghost" id="ac-bloquear-outros">Bloquear todas as contas, menos a minha</button>
+            <button class="btn btn-ghost" id="ac-derrubar-todos">Desconectar TODOS, inclusive eu</button>
+          </div>
+        </div>
+      </section>
+
       <section id="view-equipe" class="view hidden">
         <div class="barra-acoes">
           <h2 class="view-titulo">Equipe</h2>

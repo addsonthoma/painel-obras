@@ -175,6 +175,7 @@ async function aposLogin(user){
   if(!permitidos.includes(state.modulo)) trocarModulo(permitidos[0]);
   await carregarTudo();
   setInterval(()=>{ if(!state.modalAberto) carregarTudo(true); }, 60000);
+  setInterval(checarSessao, 30000);   // derrubado pelo admin -> sai em até 30 s
 }
 
 $('#form-login').addEventListener('submit', async e=>{
@@ -182,7 +183,8 @@ $('#form-login').addEventListener('submit', async e=>{
   const btn=$('#btn-entrar'); btn.disabled=true; btn.textContent='Entrando…';
   const { data, error } = await sb.auth.signInWithPassword({ email:$('#login-email').value.trim(), password:$('#login-senha').value });
   btn.disabled=false; btn.textContent='Entrar';
-  if(error){ $('#login-erro').textContent = error.message==='Invalid login credentials' ? 'E-mail ou senha incorretos.' : error.message; return; }
+  if(error){ $('#login-erro').textContent = error.message==='Invalid login credentials' ? 'E-mail ou senha incorretos.'
+      : (/banned/i.test(error.message) ? 'Acesso bloqueado pelo administrador.' : error.message); return; }
   await aposLogin(data.user);
 });
 $('#btn-sair').addEventListener('click', async ()=>{ await sb.auth.signOut(); location.reload(); });
@@ -306,7 +308,7 @@ $('#modal-fundo').addEventListener('click', e=>{ if(e.target.id==='modal-fundo')
    RENDER
    ===================================================================== */
 function render(){ renderContadores(); renderFiltros(); renderObras(); renderPendencias(); renderAgenda();
-  if(state.isAdmin){ renderCobrancas(); renderConcluidas(); renderEquipe(); renderRenovacoes(); renderPainelObras(); renderMetaCobranca(); renderResultados(); }
+  if(state.isAdmin){ renderAcessos(); renderCobrancas(); renderConcluidas(); renderEquipe(); renderRenovacoes(); renderPainelObras(); renderMetaCobranca(); renderResultados(); }
   if(state.isComercial) renderOrcamentos(); }
 
 function renderContadores(){
@@ -3212,6 +3214,159 @@ document.addEventListener('keydown', e=>{
   if(e.key==='ArrowRight'){ e.preventDefault(); $('#cal-next').click(); }
   if(e.key.toLowerCase()==='t'){ $('#cal-hoje').click(); }
 });
+
+/* =====================================================================
+   ACESSOS — quem está logado + desconectar / bloquear (só admin)
+   As funções do banco estão em sql/acessos_1_INSTALAR.sql; cada uma confere
+   is_admin(). Nada aqui age sozinho: só o clique do admin derruba/bloqueia.
+   ===================================================================== */
+let _acUlt=0;
+
+// Sessão derrubada pelo admin -> desloga este navegador.
+// Só age com "false" explícito; erro (SQL não instalado) ou null não mexe.
+async function checarSessao(){
+  if(!sb || !state.user) return;
+  const { data, error } = await sb.rpc('sessao_ativa');
+  if(error || data !== false) return;
+  alert('Sua sessão foi encerrada pelo administrador do Portal.');
+  await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+  location.reload();
+}
+
+async function minhaSessaoId(){
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    const b64=session.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    return JSON.parse(atob(b64)).session_id || null;
+  }catch(e){ return null; }
+}
+
+function aparelhoDe(ua){
+  if(!ua) return '—';
+  const nav = /Edg\//.test(ua)?'Edge':/OPR\//.test(ua)?'Opera':/Chrome\//.test(ua)?'Chrome':
+              /Firefox\//.test(ua)?'Firefox':/Safari\//.test(ua)?'Safari':'Navegador';
+  const so  = /Android/.test(ua)?'Android':/iPhone|iPad/.test(ua)?'iPhone/iPad':/Windows/.test(ua)?'Windows':
+              /Mac OS/.test(ua)?'Mac':/Linux/.test(ua)?'Linux':'';
+  const cel = /Mobile|Android|iPhone/.test(ua)?'📱':'💻';
+  return `${cel} ${nav}${so?' · '+so:''}`;
+}
+function haQuanto(iso){
+  if(!iso) return '—';
+  const min=Math.floor((Date.now()-new Date(iso))/60000);
+  if(min<1) return 'agora';
+  if(min<60) return `há ${min} min`;
+  const h=Math.floor(min/60); if(h<24) return `há ${h} h`;
+  return `há ${Math.floor(h/24)} dia(s)`;
+}
+function contaBloqueada(c){ return !!(c.bloqueada_ate && new Date(c.bloqueada_ate) > new Date()); }
+
+async function renderAcessos(){
+  if(!state.isAdmin || state.aba!=='acessos') return;
+  const [s1,s2,s3,eu] = await Promise.all([
+    sb.rpc('admin_listar_sessoes'), sb.rpc('admin_listar_contas'),
+    sb.rpc('admin_acessos_status'), minhaSessaoId() ]);
+  const st=$('#ac-status');
+  if(s1.error || s2.error){
+    st.innerHTML=`<div class="ac-aviso erro">Painel ainda não instalado no banco — rode <code>sql/acessos_1_INSTALAR.sql</code> no Supabase.
+      <small>(${esc((s1.error||s2.error).message)})</small></div>`;
+    $('#ac-sessoes').innerHTML=''; $('#ac-contas').innerHTML=''; return;
+  }
+  const sess=s1.data||[], contas=s2.data||[];
+  const pessoas=new Set(sess.map(x=>x.conta_id)).size;
+  $('#num-acessos').textContent = sess.length||'';
+
+  const blind=(s3.data&&s3.data.blindagem_tabelas)||0;
+  const { data:minhaOk } = await sb.rpc('sessao_ativa');
+  st.innerHTML=`<div class="ac-resumo">
+      <div><b>${sess.length}</b> sessão(ões) aberta(s)</div>
+      <div><b>${pessoas}</b> pessoa(s) conectada(s)</div>
+      <div><b>${contas.filter(contaBloqueada).length}</b> conta(s) bloqueada(s)</div>
+    </div>
+    <div class="ac-aviso ${blind?'ok':(minhaOk===true?'pronto':'')}">${
+      blind ? `🛡️ <b>Blindagem ATIVA</b> em ${blind} tabelas — quem for desconectado perde o acesso aos dados na hora.`
+      : minhaOk===true ? `✓ Sua sessão é reconhecida — <b>seguro ativar a blindagem</b> (<code>sql/acessos_2_BLINDAGEM.sql</code>). Sem ela, quem for desconectado com o Portal aberto cai em até 30 s.`
+      : `Blindagem não ativa. Quem for desconectado com o Portal aberto cai em até 30 s.`}</div>`;
+
+  $('#ac-sessoes').innerHTML = sess.length ? `<table class="ac-tab"><thead><tr>
+      <th>Conta</th><th>Papel</th><th>Aparelho</th><th>IP</th><th>Entrou</th><th>Última atividade</th><th></th></tr></thead><tbody>${
+    sess.map(x=>{ const minha = x.sessao_id===eu; return `<tr class="${minha?'ac-eu':''}">
+      <td><b>${esc(x.nome||x.email)}</b>${x.nome&&x.nome!==x.email?`<small>${esc(x.email)}</small>`:''}${minha?'<span class="ac-tag">você — esta sessão</span>':''}</td>
+      <td>${esc(x.papel||'—')}</td><td>${aparelhoDe(x.aparelho)}</td><td>${esc(x.ip||'—')}</td>
+      <td title="${new Date(x.criada_em).toLocaleString('pt-BR')}">${haQuanto(x.criada_em)}</td>
+      <td title="${x.ultima_atividade?new Date(x.ultima_atividade).toLocaleString('pt-BR'):''}">${haQuanto(x.ultima_atividade)}</td>
+      <td class="ac-acoes">${minha?'':`<button class="btn btn-ghost btn-sm js-ac-sess" data-id="${x.sessao_id}" data-quem="${esc(x.nome||x.email)}">Desconectar</button>`}</td>
+    </tr>`; }).join('')}</tbody></table>`
+    : '<div class="vazio">Ninguém conectado.</div>';
+
+  $('#ac-contas').innerHTML = `<table class="ac-tab"><thead><tr>
+      <th>Conta</th><th>Papel</th><th>Último login</th><th>Sessões</th><th>Situação</th><th></th></tr></thead><tbody>${
+    contas.map(c=>{ const souEu=c.conta_id===state.user.id, bloq=contaBloqueada(c);
+      return `<tr class="${bloq?'ac-bloq':''}">
+      <td><b>${esc(c.nome||c.email)}</b>${c.nome&&c.nome!==c.email?`<small>${esc(c.email)}</small>`:''}${souEu?'<span class="ac-tag">você</span>':''}</td>
+      <td>${esc(c.papel||'—')}${c.vendedor?` · ${esc(c.vendedor)}`:''}</td>
+      <td title="${c.ultimo_login?new Date(c.ultimo_login).toLocaleString('pt-BR'):''}">${haQuanto(c.ultimo_login)}</td>
+      <td>${c.sessoes||'—'}</td>
+      <td>${bloq?'<span class="ac-st bloq">🔒 Bloqueada</span>':'<span class="ac-st ok">Ativa</span>'}</td>
+      <td class="ac-acoes">${souEu?'':`${c.sessoes?`<button class="btn btn-ghost btn-sm js-ac-conta" data-id="${c.conta_id}" data-quem="${esc(c.nome||c.email)}">Desconectar</button>`:''}<button class="btn btn-ghost btn-sm js-ac-bloq" data-id="${c.conta_id}" data-bloq="${bloq?0:1}" data-quem="${esc(c.nome||c.email)}">${bloq?'Desbloquear':'Bloquear'}</button>`}</td>
+    </tr>`; }).join('')}</tbody></table>`;
+
+  _acUlt=Date.now(); acVivo();
+  document.querySelectorAll('.js-ac-sess').forEach(b=>b.onclick=()=>acDerrubarSessao(b.dataset.id,b.dataset.quem));
+  document.querySelectorAll('.js-ac-conta').forEach(b=>b.onclick=()=>acDerrubarConta(b.dataset.id,b.dataset.quem));
+  document.querySelectorAll('.js-ac-bloq').forEach(b=>b.onclick=()=>acBloquear(b.dataset.id,b.dataset.bloq==='1',b.dataset.quem));
+}
+function acVivo(){
+  const el=$('#ac-vivo'); if(!el||!_acUlt) return;
+  const s=Math.floor((Date.now()-_acUlt)/1000);
+  el.innerHTML=`<span class="ac-ponto"></span> ao vivo · atualizado ${s<2?'agora':`há ${s}s`}`;
+}
+async function acRpc(nome, args){
+  const { data, error } = await sb.rpc(nome, args);
+  if(error){ toast(error.message, true); return null; }
+  return data ?? true;
+}
+async function acDerrubarSessao(id, quem){
+  if(!confirm(`Desconectar este aparelho de ${quem}?\n\nA pessoa pode entrar de novo com a senha.`)) return;
+  if(await acRpc('admin_derrubar_sessao',{ p_sessao:id })!==null){ toast('Aparelho desconectado.'); renderAcessos(); }
+}
+async function acDerrubarConta(id, quem){
+  if(!confirm(`Desconectar ${quem} de TODOS os aparelhos?\n\nA pessoa pode entrar de novo com a senha — para impedir, use "Bloquear".`)) return;
+  if(await acRpc('admin_derrubar_conta',{ p_conta:id })!==null){ toast(`${quem} desconectado(a).`); renderAcessos(); }
+}
+async function acBloquear(id, bloquear, quem){
+  const msg = bloquear
+    ? `BLOQUEAR ${quem}?\n\nA pessoa é desconectada agora e não consegue mais entrar, nem com a senha certa. Dá para desbloquear depois.`
+    : `Desbloquear ${quem}?\n\nA pessoa volta a entrar com a MESMA senha de antes.`;
+  if(!confirm(msg)) return;
+  if(await acRpc('admin_bloquear_conta',{ p_conta:id, p_bloquear:bloquear })!==null){
+    toast(bloquear?`${quem} bloqueado(a).`:`${quem} desbloqueado(a).`); renderAcessos(); }
+}
+function acConfirmaForte(texto){
+  const r=prompt(texto+'\n\nPara confirmar, digite CONFIRMAR:');
+  return (r||'').trim().toUpperCase()==='CONFIRMAR';
+}
+$('#ac-derrubar-outros') && ($('#ac-derrubar-outros').onclick=async()=>{
+  if(!acConfirmaForte('Desconectar TODAS as pessoas, menos você?\nElas podem entrar de novo com a senha.')) return;
+  const n=await acRpc('admin_derrubar_todos',{ p_incluir_eu:false });
+  if(n!==null){ toast(`${n} sessão(ões) encerrada(s).`); renderAcessos(); }
+});
+$('#ac-bloquear-outros') && ($('#ac-bloquear-outros').onclick=async()=>{
+  const { data:contas }=await sb.rpc('admin_listar_contas');
+  const alvo=(contas||[]).filter(c=>c.conta_id!==state.user.id && !contaBloqueada(c));
+  if(!alvo.length){ toast('Não há outras contas ativas.'); return; }
+  if(!acConfirmaForte(`BLOQUEAR ${alvo.length} conta(s)?\n\n${alvo.map(c=>'• '+(c.nome||c.email)).join('\n')}\n\nNinguém além de você vai conseguir entrar. Dá para desbloquear uma a uma depois.`)) return;
+  let ok=0; for(const c of alvo){ if(await acRpc('admin_bloquear_conta',{ p_conta:c.conta_id, p_bloquear:true })!==null) ok++; }
+  toast(`${ok} de ${alvo.length} conta(s) bloqueada(s).`); renderAcessos();
+});
+$('#ac-derrubar-todos') && ($('#ac-derrubar-todos').onclick=async()=>{
+  if(!acConfirmaForte('Desconectar TODO MUNDO, INCLUSIVE VOCÊ?\nVocê vai precisar entrar de novo.')) return;
+  const n=await acRpc('admin_derrubar_todos',{ p_incluir_eu:true });
+  if(n!==null){ alert(`${n} sessão(ões) encerrada(s). Você será desconectado agora.`);
+    await sb.auth.signOut({ scope:'local' }).catch(()=>{}); location.reload(); }
+});
+// atualização ao vivo enquanto a aba está aberta
+setInterval(()=>{ if(state.aba==='acessos' && !state.modalAberto) renderAcessos(); }, 10000);
+setInterval(acVivo, 1000);
 
 /* ---------- start ---------- */
 iniciar();

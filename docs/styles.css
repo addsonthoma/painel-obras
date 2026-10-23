@@ -437,6 +437,37 @@ body.layout-lista .lista-obras{grid-template-columns:1fr; gap:10px; max-width:88
 .ae-texto strong{display:block; font-size:1.05rem; letter-spacing:.02em; color:#7a4a00; margin-bottom:4px}
 .ae-texto span{font-size:.92rem; line-height:1.5}
 
+/* aba Acessos */
+.ac-vivo{font-size:.82rem; color:var(--tinta-suave); display:inline-flex; align-items:center; gap:6px}
+.ac-ponto{width:9px; height:9px; border-radius:50%; background:var(--ok); animation:acPulso 1.6s infinite}
+@keyframes acPulso{0%{box-shadow:0 0 0 0 rgba(31,157,87,.55)}70%{box-shadow:0 0 0 8px rgba(31,157,87,0)}100%{box-shadow:0 0 0 0 rgba(31,157,87,0)}}
+.ac-resumo{display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px}
+.ac-resumo div{background:var(--card); box-shadow:var(--sombra); border-radius:12px; padding:10px 16px; font-size:.9rem}
+.ac-resumo b{font-size:1.4rem; margin-right:4px}
+.ac-aviso{border-radius:10px; padding:10px 14px; font-size:.88rem; margin-bottom:14px; background:#eef1f6; color:var(--tinta)}
+.ac-aviso.ok{background:var(--ok-bg); color:#12673a}
+.ac-aviso.pronto{background:var(--info-bg); color:#1b4fb8}
+.ac-aviso.erro{background:var(--perigo-bg); color:#7a1f1f}
+.ac-sub{font-size:1rem; margin:18px 0 8px}
+.ac-tab{width:100%; border-collapse:collapse; background:var(--card); border-radius:12px; overflow:hidden; box-shadow:var(--sombra); font-size:.87rem}
+.ac-tab th{text-align:left; background:#f3f5f9; color:var(--tinta-suave); font-weight:700; font-size:.76rem; text-transform:uppercase; letter-spacing:.03em; padding:9px 12px}
+.ac-tab td{padding:9px 12px; border-top:1px solid var(--linha); vertical-align:middle}
+.ac-tab td small{display:block; color:var(--tinta-suave)}
+.ac-eu{background:#f2f8ff}
+.ac-bloq{background:#fdf3f3}
+.ac-tag{display:inline-block; margin-left:6px; font-size:.68rem; font-weight:800; background:var(--info-bg); color:#1b4fb8; padding:1px 7px; border-radius:20px}
+.ac-st{font-size:.76rem; font-weight:800; padding:2px 9px; border-radius:20px}
+.ac-st.ok{background:var(--ok-bg); color:#12673a}
+.ac-st.bloq{background:var(--perigo-bg); color:var(--perigo)}
+.ac-acoes{white-space:nowrap; text-align:right}
+.ac-acoes .btn{margin-left:4px}
+.ac-perigo{margin-top:26px; border:2px solid #f0c9c9; background:#fffafa; border-radius:12px; padding:14px 16px}
+.ac-perigo h3{margin:0 0 4px; color:var(--perigo); font-size:1rem}
+.ac-perigo p{margin:0 0 10px; font-size:.85rem; color:var(--tinta-suave)}
+.ac-perigo-botoes{display:flex; gap:8px; flex-wrap:wrap}
+.ac-perigo-botoes .btn:hover{border-color:var(--perigo); color:var(--perigo)}
+@media (max-width:760px){ .ac-tab{display:block; overflow-x:auto} }
+
 /* ---- metas, medidores e KPIs ---- */
 .meta-box{background:var(--card); border-radius:var(--raio); box-shadow:var(--sombra); padding:18px 20px; margin-bottom:18px}
 .meta-box.compacto{padding:15px 18px}
