@@ -166,8 +166,10 @@ async function aposLogin(user){
   // módulos visíveis por papel:
   //  admin     -> tudo  ·  comercial (vendedor) -> Orçamentos + Leads  ·  operação -> Obras
   let permitidos;
-  if(state.isAdmin) permitidos = ['obras','orcamentos','leads','monitor','renovacoes'];
-  else if(perfil?.vendedor) permitidos = ['orcamentos','leads'];
+  // LEADS PAUSADO desde 23/10/2026 (painel desativado a pedido do Addson).
+  // Para reativar, devolver 'leads' nas duas listas abaixo.
+  if(state.isAdmin) permitidos = ['obras','orcamentos','monitor','renovacoes'];
+  else if(perfil?.vendedor) permitidos = ['orcamentos'];
   else permitidos = ['obras'];
   document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('hidden', !permitidos.includes(b.dataset.mod)));
   if(!permitidos.includes(state.modulo)) trocarModulo(permitidos[0]);
