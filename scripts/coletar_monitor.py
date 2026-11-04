@@ -12,7 +12,7 @@ Roda sozinho a cada 2 dias via Agendador (ver coletar_monitor.bat).
 Cookies: lidos do Chrome automaticamente (browser_cookie3). Se a sessão do e-SCI
 expirar, faça login no Chrome e rode de novo.
 
-Requer: pip install browser_cookie3 requests   (já instalados p/ o drill de leads)
+Requer: pip install browser_cookie3 requests
 """
 import json, os, sys, time, urllib.request, urllib.error
 from urllib.parse import quote
@@ -62,11 +62,10 @@ EP_BUSCA = "/Safe/Geral/ControllerConsultaGeral/consultaGeralEdificacao/"
 EP_EDIF  = "/Safe/Gerencial/ControllerRegistroEdificacoes/carregarDadosEdificacao/"
 EP_BLOCO = "/Safe/Geral/Edificacao/ControllerBloco/carregarDadosBlocoUltimoHomologacaoOuEnquadramento/"
 
-# Procura cookie em arquivo (reaproveita o cookies.txt do drill de leads) antes
+# Procura cookie em arquivo antes
 # de tentar o Chrome (que exige admin). Formato: a string de "copy(document.cookie)".
 COOKIE_FILES = [
     os.path.join(RAIZ, "privado", "esci_cookie.txt"),
-    r"C:\Users\User\Documents\Rodrigues_Preventivos_Leads\PainelGithub\scripts\cookies.txt",
 ]
 def cookies_de_arquivo():
     for fp in COOKIE_FILES:
@@ -196,6 +195,8 @@ def coletar_re(s, re):
 
 def main():
     res = sb("GET", "monitor_res?select=id,re_codigo,numg_edificacao,nome_edificacao&ativo=eq.true")
+    if res is None:
+        print("[!] SUPABASE NAO RESPONDEU (veja o erro acima; 402 = projeto bloqueado por cota). Coleta cancelada."); return
     if not res:
         print("Nenhuma RE monitorada (rode a migração de monitoramento e cadastre clientes/RE's)."); return
     print("Monitorando %d RE(s)..." % len(res))

@@ -164,18 +164,15 @@ async function aposLogin(user){
   pb.classList.toggle('admin', state.isAdmin);
   document.querySelectorAll('.so-admin').forEach(el=>el.classList.toggle('hidden', !state.isAdmin));
   // módulos visíveis por papel:
-  //  admin     -> tudo  ·  comercial (vendedor) -> Orçamentos + Leads  ·  operação -> Obras
+  //  admin     -> tudo  ·  comercial (vendedor) -> Orçamentos  ·  operação -> Obras
   let permitidos;
-  // LEADS PAUSADO desde 23/10/2026 (painel desativado a pedido do Addson).
-  // Para reativar, devolver 'leads' nas duas listas abaixo.
   if(state.isAdmin) permitidos = ['obras','orcamentos','monitor','renovacoes'];
   else if(perfil?.vendedor) permitidos = ['orcamentos'];
   else permitidos = ['obras'];
   document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('hidden', !permitidos.includes(b.dataset.mod)));
   if(!permitidos.includes(state.modulo)) trocarModulo(permitidos[0]);
   await carregarTudo();
-  setInterval(()=>{ if(!state.modalAberto) carregarTudo(true); }, 60000);
-  setInterval(checarSessao, 30000);   // derrubado pelo admin -> sai em até 30 s
+  ligarRecarga();
 }
 
 $('#form-login').addEventListener('submit', async e=>{
@@ -213,7 +210,32 @@ function modalSenha(){
 /* =====================================================================
    CARGA DE DADOS
    ===================================================================== */
+/* Recarga automatica. Incidente 11/2026: uma aba esquecida aberta baixava tudo a cada
+   60 s, 24 h por dia, e estourou a cota de trafego do Supabase. Agora so atualiza com a
+   aba visivel e alguem usando; ao voltar, atualiza na hora se os dados estiverem velhos. */
+const RECARGA_MS = 5*60000, OCIOSO_MS = 15*60000;
+let ultimoUso = Date.now(), ultimaCarga = 0;
+function emUso(){ return document.visibilityState==='visible' && Date.now()-ultimoUso < OCIOSO_MS; }
+function recarregarSeVelho(){
+  if(emUso() && !state.modalAberto && Date.now()-ultimaCarga >= RECARGA_MS) carregarTudo(true);
+}
+function ligarRecarga(){
+  ['pointerdown','pointermove','keydown','wheel','touchstart'].forEach(ev=>
+    window.addEventListener(ev, ()=>{
+      const voltou = Date.now()-ultimoUso >= OCIOSO_MS;
+      ultimoUso = Date.now();
+      if(voltou){ recarregarSeVelho(); checarSessao(); }
+    }, { passive:true }));
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState!=='visible') return;
+    ultimoUso = Date.now(); recarregarSeVelho(); checarSessao();
+  });
+  setInterval(recarregarSeVelho, 60000);
+  setInterval(()=>{ if(emUso()) checarSessao(); }, 30000);   // derrubado pelo admin -> sai em até 30 s
+}
+
 async function carregarTudo(silencioso){
+  ultimaCarga = Date.now();
   const { data:obras, error } = await sb.from('obras')
     .select('*, obra_servicos(*), obra_itens(*)').order('criado_em',{ascending:false});
   if(error){ if(!silencioso) toast('Erro ao carregar obras: '+error.message, true); return; }
@@ -246,18 +268,15 @@ async function carregarTudo(silencioso){
 }
 
 /* =====================================================================
-   MÓDULOS DO PORTAL (Obras, Leads, ...)
+   MÓDULOS DO PORTAL
    ===================================================================== */
-const LEADS_URL = 'https://addsonthoma.github.io/rodrigues-painel/qbQv3yHGdx6ocaYE/';
 function trocarModulo(mod){
   state.modulo = mod;
   document.querySelectorAll('.modulo').forEach(b=> b.classList.toggle('ativa', b.dataset.mod===mod));
   document.getElementById('mod-obras').classList.toggle('hidden', mod!=='obras');
   document.getElementById('mod-orcamentos').classList.toggle('hidden', mod!=='orcamentos');
-  document.getElementById('mod-leads').classList.toggle('hidden', mod!=='leads');
   document.getElementById('mod-monitor').classList.toggle('hidden', mod!=='monitor');
   document.getElementById('mod-renovacoes').classList.toggle('hidden', mod!=='renovacoes');
-  if(mod==='leads'){ const fr=document.getElementById('leads-frame'); if(!fr.getAttribute('src')) fr.src=LEADS_URL+'?v='+Date.now(); }
   if(mod==='monitor') carregarMonitor();
   if(mod==='orcamentos') renderOrcamentos();
   if(mod==='renovacoes') renderRenovacoes();
@@ -1979,7 +1998,7 @@ function formOrc(o){
   abrirModal(`<h2>${ed?'Editar orçamento':'Novo orçamento'}</h2>
     <form id="form-orc"><div class="form-grid">
       <label class="campo full">Cliente *<input name="cliente" required value="${esc(o?.cliente||'')}"></label>
-      <label class="campo">Origem do lead<input name="origem" placeholder="indicação / site / leads CBMSC…" value="${esc(o?.origem||'')}"></label>
+      <label class="campo">Origem do lead<input name="origem" placeholder="indicação / site…" value="${esc(o?.origem||'')}"></label>
       <label class="campo">Responsável<input name="responsavel" value="${esc(o?.responsavel||state.perfil?.nome||'')}"></label>
       <label class="campo">Contato (nome)<input name="contato_nome" value="${esc(o?.contato_nome||'')}"></label>
       <label class="campo">Telefone / WhatsApp<input name="telefone" placeholder="(47) 9 9999-9999" value="${esc(o?.telefone||'')}"></label>
@@ -3425,7 +3444,7 @@ $('#ac-derrubar-todos') && ($('#ac-derrubar-todos').onclick=async()=>{
     await sb.auth.signOut({ scope:'local' }).catch(()=>{}); location.reload(); }
 });
 // atualização ao vivo enquanto a aba está aberta
-setInterval(()=>{ if(state.aba==='acessos' && !state.modalAberto) renderAcessos(); }, 10000);
+setInterval(()=>{ if(state.aba==='acessos' && !state.modalAberto && emUso()) renderAcessos(); }, 10000);
 setInterval(acVivo, 1000);
 
 /* ---------- start ---------- */

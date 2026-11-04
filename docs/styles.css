@@ -64,7 +64,7 @@ code{background:#eef1f6; padding:1px 6px; border-radius:6px; font-size:.85em}
   -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
 .topbar-user{display:flex; align-items:center; gap:9px; white-space:nowrap; flex-wrap:wrap}
 
-/* olhinho: oculta/mostra os valores (para o painel na TV / olhares) */
+/* olhinho: oculta/mostra os valores (para olhares) */
 .btn-olho{margin-left:auto; border:1px solid var(--linha); background:#fff; color:var(--tinta-suave);
   border-radius:11px; padding:7px 9px; cursor:pointer; display:inline-flex; align-items:center; transition:all .15s}
 .btn-olho svg{width:18px; height:18px; display:block}
@@ -112,7 +112,6 @@ body.ocultar-valores .hist-resumo b{
 .modulo.ativa svg{color:#fff; transform:scale(1.05)}
 .modulo[data-mod="obras"]      {--c:#E84A56; --c-soft:#fdeef0; --c-glow:rgba(232,74,86,.34)}
 .modulo[data-mod="orcamentos"] {--c:#1f9d57; --c-soft:#e8f6ee; --c-glow:rgba(31,157,87,.32)}
-.modulo[data-mod="leads"]      {--c:#2f6df0; --c-soft:#e9f0fe; --c-glow:rgba(47,109,240,.32)}
 .modulo[data-mod="monitor"]    {--c:#7a3bd0; --c-soft:#f1eafb; --c-glow:rgba(122,59,208,.32)}
 .modulo[data-mod="renovacoes"] {--c:#0d9aa6; --c-soft:#e3f6f7; --c-glow:rgba(13,154,166,.32)}
 
@@ -652,11 +651,7 @@ button.kpi-tile:hover{transform:translateY(-2px); box-shadow:var(--sombra)}
 /* ===== Portal: módulos (estilos da barra ficam no topo, junto do .topbar) ===== */
 .modulo-view{display:block}
 #mod-obras > .abas{max-width:1180px; margin:0 auto; padding:10px 20px 0; overflow:auto}
-.leads-bar{display:flex; align-items:center; gap:8px; padding:8px 16px; background:#fff; border-bottom:1px solid var(--linha); font-size:.92rem}
-.leads-sub{color:var(--tinta-suave)}
-.leads-fs{margin-left:auto}
-#leads-frame{width:100%; height:calc(100vh - 104px); border:0; display:block; background:#0e1117}
-@media (max-width:640px){ #leads-frame{height:calc(100vh - 156px)} .modulo{font-size:.9rem; padding:8px 11px} }
+@media (max-width:640px){ .modulo{font-size:.9rem; padding:8px 11px} }
 
 /* selo de confiabilidade do monitoramento */
 .mon-selo{display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:.82rem;
@@ -685,7 +680,7 @@ button.kpi-tile:hover{transform:translateY(-2px); box-shadow:var(--sombra)}
 .re-autos{margin-top:8px; display:flex; flex-direction:column; gap:4px; border-top:1px dashed var(--linha); padding-top:7px}
 .re-auto-li{font-size:.82rem; color:var(--tinta-suave); line-height:1.4}
 
-/* ---- responsivo / TV ---- */
+/* ---- responsivo ---- */
 @media (max-width:640px){
   .topbar{flex-wrap:wrap; height:auto; padding:8px 12px; gap:8px}
   .form-grid{grid-template-columns:1fr}
