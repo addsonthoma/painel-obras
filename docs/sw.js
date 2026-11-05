@@ -2,7 +2,7 @@
    Estratégia: network-first para os arquivos do próprio app (sempre pega a
    versão mais nova quando online; cai no cache só offline). NÃO intercepta
    Supabase nem CDNs — esses vão direto pra rede. */
-const CACHE = 'painel-obras-v4';
+const CACHE = 'painel-obras-v5';
 const CORE = [
   './', './index.html', './app.js', './styles.css', './config.js',
   './manifest.json', './assets/icon-192.png', './assets/icon-512.png',

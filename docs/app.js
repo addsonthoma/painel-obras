@@ -51,7 +51,7 @@ const COBRANCA = {
 /* ---------- estado ---------- */
 let sb = null;
 const state = {
-  user:null, perfil:null, isAdmin:false, isComercial:false,
+  user:null, perfil:null, isAdmin:false, isDono:false, isComercial:false,
   obras:[], equipe:[], financeiro:{}, monitor:[], orcamentos:[], orcErro:null,
   renovacoes:[], renovErro:null, buscaRenov:'', fRenovDias:'', fRenovStatus:'', fRenovEmail:'',
   metaCobranca:100000,
@@ -163,6 +163,10 @@ async function aposLogin(user){
   const pb = $('#user-papel'); pb.textContent = state.isAdmin?'admin':(perfil?.vendedor?'comercial':'operação');
   pb.classList.toggle('admin', state.isAdmin);
   document.querySelectorAll('.so-admin').forEach(el=>el.classList.toggle('hidden', !state.isAdmin));
+  // Aba Acessos: so o dono. Quem decide e o banco (is_dono); aqui so esconde o botao.
+  const { data:dono } = await sb.rpc('is_dono');
+  state.isDono = dono === true;
+  document.querySelectorAll('.so-dono').forEach(el=>el.classList.toggle('hidden', !state.isDono));
   // módulos visíveis por papel:
   //  admin     -> tudo  ·  comercial (vendedor) -> Orçamentos  ·  operação -> Obras
   let permitidos;
@@ -3280,7 +3284,7 @@ function haQuanto(iso){
 function contaBloqueada(c){ return !!(c.bloqueada_ate && new Date(c.bloqueada_ate) > new Date()); }
 
 async function renderAcessos(){
-  if(!state.isAdmin || state.aba!=='acessos') return;
+  if(!state.isDono || state.aba!=='acessos') return;
   const [s1,s2,s3,eu] = await Promise.all([
     sb.rpc('admin_listar_sessoes'), sb.rpc('admin_listar_contas'),
     sb.rpc('admin_acessos_status'), minhaSessaoId() ]);
